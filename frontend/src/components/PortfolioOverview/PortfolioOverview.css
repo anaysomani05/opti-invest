@@ -1,0 +1,101 @@
+/* Portfolio Overview Styles */
+
+.po-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+@media (min-width: 768px) {
+  .po-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .po-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.po-card-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding-bottom: 0.5rem;
+  flex-wrap: nowrap !important;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.po-title-sm {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.po-title-lg {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.po-flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Compact inline row for metric line (icon, value, label) */
+.po-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem; /* tighter spacing */
+}
+
+.po-compact .po-icon {
+  margin-right: 0.125rem !important;
+}
+
+.po-compact .po-trailing {
+  margin-left: 0.125rem !important;
+}
+
+.po-muted {
+  color: hsl(var(--muted-foreground));
+}
+
+.po-icon {
+  flex: 0 0 auto;
+  margin-left: 0.5rem;
+}
+
+.po-card-header > svg {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Ensure first child (title) takes available space so icon stays on same line */
+.po-card-header > *:first-child {
+  margin-right: auto;
+  min-width: 0;
+}
+
+.po-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+}
+
+.po-progress-sm { height: 0.5rem; }
+.po-progress-xs { height: 0.5rem; flex: 1; min-width: 0; }
+
+.po-right {
+  text-align: right;
+}
+
+.po-mb-1 { margin-bottom: 0.25rem; }
+.po-mt-1 { margin-top: 0.25rem; }
+.po-gap-2 { gap: 0.5rem; }
+.po-gap-3 { gap: 0.75rem; }
+.po-gap-4 { gap: 1rem; }

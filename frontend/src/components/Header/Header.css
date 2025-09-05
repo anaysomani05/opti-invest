@@ -1,0 +1,104 @@
+/* Dashboard Header Styles */
+
+.header {
+  border-bottom: 1px solid hsl(var(--border));
+  background-color: hsl(var(--card) / 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.header-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem 0.5rem 1rem 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  justify-content: flex-start;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  background-color: hsl(var(--primary) / 0.1);
+  border: 1px solid hsl(var(--primary) / 0.2);
+  margin-left: -4rem;
+}
+
+.header-logo-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: hsl(var(--primary));
+}
+
+.header-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.header-badge {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  background-color: transparent;
+  color: hsl(var(--foreground));
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin-left: auto;
+}
+
+.header-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: hsl(var(--success));
+  animation: pulse 2s infinite;
+}
+
+.header-status-text {
+  color: hsl(var(--muted-foreground));
+}
+
+
+.header-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.375rem;
+  border: none;
+  background-color: transparent;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.header-button:hover {
+  background-color: hsl(var(--accent));
+}
+
+.header-button-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Animation for status dot */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

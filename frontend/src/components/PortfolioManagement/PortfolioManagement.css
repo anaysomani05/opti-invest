@@ -1,0 +1,75 @@
+/* Portfolio Management Styles */
+
+.pm-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.pm-summary-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+@media (min-width: 768px) {
+  .pm-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.pm-upload-area {
+  border: 2px dashed hsl(var(--border));
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.pm-upload-icon {
+  margin: 0 auto 1rem;
+  width: 3rem;
+  height: 3rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.pm-upload-subtitle {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.pm-holdings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+}
+
+.pm-holdings-grid {
+  display: grid;
+  gap: 0.25rem;
+}
+@media (min-width: 768px) {
+  .pm-holdings-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+.pm-label-muted {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.pm-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 1rem;
+}
+
+.pm-loading,
+.pm-empty,
+.pm-error {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.pm-error { color: hsl(var(--destructive)); }
+.pm-loading,
+.pm-empty { color: hsl(var(--muted-foreground)); }
