@@ -48,74 +48,12 @@ Transform your investment strategy with AI-powered portfolio optimization, real-
 - **yfinance** - Yahoo Finance market data integration
 - **scikit-learn** - Machine learning algorithms for risk modeling
 
-## Getting Started
+## Try It Here
 
-### Prerequisites
-- **Node.js** (v18 or higher) and npm
-- **Python** (v3.8 or higher) and pip
-- **API Keys** (optional but recommended for full functionality):
-  - Finnhub API key (free tier available)
-  - Marketstack API key (100 free requests/month)
-  - NewsAPI key (1000 free requests/day)
-  - Reddit API credentials (free tier)
+**Link:** [https://opti-invest.vercel.app](https://opti-invest.vercel.app)
 
-### Installation
+Experience the full power of Opti-Invest directly in your browser. Upload your portfolio data and get instant AI-powered optimization and sentiment analysis.
 
-1. **Clone the repository**
-```bash
-git clone <YOUR_GIT_URL>
-cd opti-invest
-```
-
-2. **Install Frontend Dependencies**
-```bash
-cd frontend
-npm install
-```
-
-3. **Install Backend Dependencies**
-```bash
-cd ../backend
-pip install -r requirements.txt
-```
-
-4. **Configure Environment Variables**
-Create a `.env` file in the backend directory:
-```env
-# Finnhub API (primary data source)
-FINNHUB_API_KEY=your_finnhub_api_key
-
-# Marketstack API (for historical data)
-MARKETSTACK_API_KEY=your_marketstack_api_key
-
-# Sentiment Analysis APIs
-NEWSAPI_KEY=your_newsapi_key
-REDDIT_CLIENT_ID=your_reddit_client_id
-REDDIT_CLIENT_SECRET=your_reddit_client_secret
-REDDIT_USER_AGENT=OptiInvest/1.0
-
-# Server settings
-HOST=127.0.0.1
-PORT=8000
-DEBUG=true
-FRONTEND_URL=http://localhost:8080
-```
-
-### Running the Application
-
-1. **Start the Backend Server**
-```bash
-cd backend
-python run.py
-```
-The API will be available at `http://localhost:8000`
-
-2. **Start the Frontend Development Server**
-```bash
-cd frontend
-npm run dev
-```
-The application will be available at `http://localhost:8080`
 
 ## Project Structure
 
@@ -199,23 +137,5 @@ backend/
 - **CSV Import/Export**: Easy portfolio data management
 - **Real-time Updates**: Live market data integration
 - **Caching**: Optimized API usage with intelligent caching
-
-## Deployment
-
-### Frontend (Vercel)
-```bash
-cd frontend
-npm run build
-# Deploy to Vercel or your preferred platform
-```
-
-### Backend (Railway/Heroku/DigitalOcean)
-```bash
-cd backend
-# Configure production environment variables
-# Deploy using your preferred platform
-```
-
-
 
 **Opti-Invest** - Optimize your investment strategy with AI-powered portfolio management and sentiment analysis.
