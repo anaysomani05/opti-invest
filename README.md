@@ -48,12 +48,31 @@ Transform your investment strategy with AI-powered portfolio optimization, real-
 - **yfinance** - Yahoo Finance market data integration
 - **scikit-learn** - Machine learning algorithms for risk modeling
 
-## Try It Here
+## Project Setup
 
-**Link:** [https://opti-invest.vercel.app](https://opti-invest.vercel.app)
+### Backend Setup
+```bash
+cd backend
+pip install -r requirements.txt
+python run.py
+```
 
-Experience the full power of Opti-Invest directly in your browser. Upload your portfolio data and get instant AI-powered optimization and sentiment analysis.
+### Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
+### Environment Variables
+Create `.env` file in backend directory:
+```
+FINNHUB_API_KEY=your_finnhub_key
+MARKETSTACK_API_KEY=your_marketstack_key
+NEWSAPI_KEY=your_newsapi_key
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_secret
+```
 
 ## Project Structure
 
