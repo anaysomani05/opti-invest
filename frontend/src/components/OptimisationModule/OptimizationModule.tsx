@@ -1,766 +1,719 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { TrendingUp, Shield, Zap, BarChart3, PieChart, Calculator, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import {
+  TrendingUp,
+  BarChart3,
+  Shield,
+  Zap,
+  Calculator,
+  AlertTriangle,
+  Loader2,
+  PieChart,
+} from "lucide-react";
+import {
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import "./OptimizationModule.css";
-import { 
-  portfolioAPI, 
-  optimizationAPI, 
-  type OptimizationRequest, 
-  type OptimizationResult, 
-  type RiskProfile,
-  type ValidationResult,
-  type EfficientFrontierPoint,
-  type HoldingWithMetrics
+import {
+  portfolioAPI,
+  optimizationAPI,
+  type OptimizationRequest,
+  type OptimizationResult,
+  type HoldingWithMetrics,
 } from "@/lib/api";
 
-interface OptimizationModuleProps {
+interface Props {
   onNavigateToPortfolio?: () => void;
 }
 
-export const OptimizationModule = ({ onNavigateToPortfolio }: OptimizationModuleProps) => {
+type ActiveTab = "comparison" | "rebalancing" | "frontier" | "metrics";
+
+const RISK_META = {
+  conservative: { icon: Shield, label: "CONSERVATIVE", desc: "Min volatility, stable returns" },
+  moderate: { icon: BarChart3, label: "MODERATE", desc: "Balanced risk / return" },
+  aggressive: { icon: Zap, label: "AGGRESSIVE", desc: "Max Sharpe, high potential" },
+};
+
+export const OptimizationModule = ({ onNavigateToPortfolio }: Props) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [riskProfile, setRiskProfile] = useState("moderate");
-  const [activeTab, setActiveTab] = useState("comparison");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("comparison");
 
-  // REUSE HOLDINGS DATA FROM PORTFOLIO PAGE (no additional API calls!)
-  const { data: holdings = [], isLoading: holdingsLoading, error: holdingsError } = useQuery<HoldingWithMetrics[]>({
-    queryKey: ['holdings-with-metrics'],
-    queryFn: portfolioAPI.getHoldingsWithMetrics,
-    refetchInterval: false, // Disable auto-refresh to save API calls
-    staleTime: 10 * 60 * 1000, // Consider data fresh for 10 minutes
-    gcTime: 15 * 60 * 1000, // Keep in cache for 15 minutes (renamed from cacheTime)
-    retry: false, // Don't retry on failure
-    refetchOnWindowFocus: false, // Don't refetch on window focus
+  const { data: holdings = [], isLoading: holdingsLoading, error: holdingsError } =
+    useQuery<HoldingWithMetrics[]>({
+      queryKey: ["holdings-with-metrics"],
+      queryFn: portfolioAPI.getHoldingsWithMetrics,
+      staleTime: 10 * 60 * 1000,
+      gcTime: 15 * 60 * 1000,
+      retry: false,
+      refetchOnWindowFocus: false,
+    });
+
+  const { data: riskProfiles = [], error: profilesError } = useQuery({
+    queryKey: ["risk-profiles"],
+    queryFn: optimizationAPI.getRiskProfiles,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
-  // CALCULATE CURRENT PORTFOLIO WEIGHTS FROM REAL DATA
-  const currentPortfolio = useMemo(() => {
-    if (!holdings.length) return {};
-    
-    const totalValue = holdings.reduce((sum, holding) => sum + holding.value, 0);
-    const weights: Record<string, number> = {};
-    
-    holdings.forEach(holding => {
-      weights[holding.symbol] = (holding.value / totalValue) * 100;
-    });
-    
-    return weights;
+  const currentWeights = useMemo(() => {
+    const total = holdings.reduce((s, h) => s + h.value, 0);
+    if (!total) return {} as Record<string, number>;
+    return Object.fromEntries(
+      holdings.map((h) => [h.symbol, (h.value / total) * 100])
+    );
   }, [holdings]);
 
-  // GET RISK PROFILES FROM BACKEND
-  const { data: riskProfiles = [], isLoading: riskProfilesLoading, error: riskProfilesError } = useQuery({
-    queryKey: ['risk-profiles'],
-    queryFn: optimizationAPI.getRiskProfiles,
-    retry: false, // Don't retry on failure
-    refetchOnWindowFocus: false, // Don't refetch on window focus
-  });
-
-  // VALIDATE PORTFOLIO FOR OPTIMIZATION (disabled to save API calls)
-  const validation = useMemo(() => {
-    if (!holdings.length) return null;
+  const portfolioMetrics = useMemo(() => {
+    const totalValue = holdings.reduce((s, h) => s + h.value, 0);
+    const totalGL = holdings.reduce((s, h) => s + h.gain_loss, 0);
+    const costBasis = totalValue - totalGL;
     return {
-      is_valid: holdings.length >= 3,
-      issues: holdings.length < 3 ? ["Need at least 3 holdings for optimization"] : [],
-      suggestions: holdings.length < 3 ? ["Add more holdings to diversify your portfolio"] : [],
-      portfolio_summary: {
-        total_value: holdings.reduce((sum, holding) => sum + holding.value, 0),
-        holdings_count: holdings.length,
-        symbols: holdings.map(h => h.symbol)
-      }
+      totalValue,
+      totalGL,
+      returnPct: costBasis > 0 ? (totalGL / costBasis) * 100 : 0,
     };
   }, [holdings]);
 
-  // OPTIMIZATION MUTATION
-  const optimizationMutation = useMutation({
-    mutationFn: async (request: OptimizationRequest) => {
-      return optimizationAPI.optimizePortfolio(request);
-    },
+  const optimizeMutation = useMutation({
+    mutationFn: (req: OptimizationRequest) => optimizationAPI.optimizePortfolio(req),
     onSuccess: (result) => {
       toast({
-        title: "Optimization Complete!",
-        description: `Portfolio optimized with Sharpe ratio of ${result.sharpe_ratio.toFixed(2)}`,
+        title: "Optimization complete",
+        description: `Sharpe ratio: ${result.sharpe_ratio.toFixed(2)}`,
       });
-      // Invalidate related queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ['optimization-results'] });
+      queryClient.invalidateQueries({ queryKey: ["optimization-results"] });
     },
-    onError: (error: any) => {
+    onError: (e: any) => {
       toast({
-        title: "Optimization Failed",
-        description: error.message || "Failed to optimize portfolio. Please try again.",
+        title: "Optimization failed",
+        description: e.message ?? "Please try again.",
         variant: "destructive",
       });
     },
   });
 
-  // GET EFFICIENT FRONTIER DATA from optimization result
-  const efficientFrontier = optimizationMutation.data?.efficient_frontier || [];
-  const frontierLoading = optimizationMutation.isPending;
-
-  const handleOptimize = async () => {
+  const handleOptimize = () => {
     if (!holdings.length) {
       toast({
-        title: "No Holdings Found",
-        description: "Please add some holdings to your portfolio before optimizing.",
+        title: "No holdings",
+        description: "Add holdings to your portfolio first.",
         variant: "destructive",
       });
       return;
     }
-
-    // Extract current prices from holdings to avoid duplicate API calls
     const currentPrices: Record<string, number> = {};
-    holdings.forEach(holding => {
-      currentPrices[holding.symbol] = holding.current_price;
-    });
-
-    const request: OptimizationRequest = {
+    holdings.forEach((h) => (currentPrices[h.symbol] = h.current_price));
+    optimizeMutation.mutate({
       risk_profile: riskProfile,
       objective: "max_sharpe",
-      lookback_period: 252, // 1 year of trading days
-      current_prices: currentPrices, // Send current prices to avoid API calls
-    };
-
-    optimizationMutation.mutate(request);
+      lookback_period: 252,
+      current_prices: currentPrices,
+    });
   };
 
-  const getColorForChange = (current: number, optimized: number) => {
-    const diff = optimized - current;
-    if (Math.abs(diff) < 1) return "text-muted-foreground";
-    return diff > 0 ? "text-success" : "text-destructive";
-  };
+  const result = optimizeMutation.data;
+  const frontier = result?.efficient_frontier ?? [];
 
-  // Calculate portfolio metrics
-  const portfolioMetrics = useMemo(() => {
-    const totalValue = holdings.reduce((sum, holding) => sum + holding.value, 0);
-    const totalGainLoss = holdings.reduce((sum, holding) => sum + holding.gain_loss, 0);
-    const totalCostBasis = totalValue - totalGainLoss;
-    const totalReturnPercent = totalCostBasis > 0 ? (totalGainLoss / totalCostBasis) * 100 : 0;
-    
-    return {
-      totalValue,
-      totalGainLoss,
-      totalCostBasis,
-      totalReturnPercent
-    };
-  }, [holdings]);
-
-  // Backend connection error - show preview of what optimization will look like
-  if (holdingsError || riskProfilesError) {
+  // ── Backend down: show static preview ──────────────────────────
+  if (holdingsError || profilesError) {
     return (
-      <div className="space-y-6">
-        {/* Preview of what optimization will look like */}
-        <div className="optimization-container" style={{ opacity: 0.6 }}>
+      <div className="px-5 py-8 text-center">
+        <AlertTriangle
+          className="w-6 h-6 mx-auto mb-3"
+          style={{ color: "hsl(var(--warning))" }}
+        />
+        <div className="text-xs text-muted-foreground tracking-wider mb-1">
+          BACKEND UNAVAILABLE
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          Start the backend server at localhost:8000
+        </div>
+      </div>
+    );
+  }
 
-          {/* Risk Profile Selection Preview */}
-          <div className="optimization-card">
-            <div className="optimization-card-header">
-              <div className="optimization-card-title">Risk Profile Selection</div>
-            </div>
-            <div className="optimization-card-content">
-              <div className="optimization-grid-3">
-                {[
-                  { id: "conservative", name: "Conservative", icon: Shield, description: "Low risk, stable returns" },
-                  { id: "moderate", name: "Moderate", icon: BarChart3, description: "Balanced risk and return" },
-                  { id: "aggressive", name: "Aggressive", icon: Zap, description: "High risk, high potential returns" }
-                ].map((profile) => {
-                  const IconComponent = profile.icon;
-                  return (
-                    <div key={profile.id} className="optimization-radio-item">
-                      <div className="optimization-radio-label">
-                        <IconComponent className="optimization-radio-icon" />
-                        <div className="optimization-radio-content">
-                          <div className="optimization-radio-name">{profile.name}</div>
-                          <div className="optimization-radio-description">
-                            {profile.description}
-                          </div>
-                          <div className="optimization-radio-details">
-                            <div>Return: 8-12%</div>
-                            <div>Volatility: ≤20%</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ marginTop: '1.5rem' }}>
-                <button disabled className="optimization-button optimization-button-full">
-                  <Calculator className="optimization-button-icon" />
-                  Optimize Portfolio
-                </button>
-              </div>
-            </div>
-          </div>
+  if (holdingsLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground text-xs tracking-wider">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        LOADING...
+      </div>
+    );
+  }
 
-          {/* Optimization Results Preview */}
-          <div className="optimization-grid-4">
-            {[
-              { title: "Expected Return", icon: TrendingUp },
-              { title: "Volatility", icon: BarChart3 },
-              { title: "Sharpe Ratio", icon: TrendingUp },
-              { title: "CVaR (95%)", icon: Shield }
-            ].map((metric) => (
-              <div key={metric.title} className="optimization-metric-card">
-                <div className="optimization-metric-header">
-                  <div className="optimization-metric-title">{metric.title}</div>
-                  <metric.icon className="optimization-metric-icon" />
+  // ── No holdings ────────────────────────────────────────────────
+  if (!holdings.length) {
+    return (
+      <div className="py-16 text-center">
+        <PieChart
+          className="w-8 h-8 mx-auto mb-3"
+          style={{ color: "hsl(var(--muted-foreground))" }}
+        />
+        <div className="text-xs text-muted-foreground tracking-[0.15em] mb-4">
+          NO HOLDINGS — OPTIMIZATION REQUIRES AT LEAST 3 POSITIONS
+        </div>
+        <button className="btn-terminal" onClick={onNavigateToPortfolio}>
+          GO TO PORTFOLIO
+        </button>
+      </div>
+    );
+  }
+
+  // ── Validation warning ─────────────────────────────────────────
+  const notReady = holdings.length < 3;
+
+  return (
+    <div>
+      {notReady && (
+        <div
+          className="flex items-center gap-2 px-5 py-2 text-xs"
+          style={{
+            borderBottom: "1px solid hsl(var(--border))",
+            color: "hsl(var(--warning))",
+            background: "hsl(var(--warning) / 0.06)",
+          }}
+        >
+          <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+          Need at least 3 holdings for optimization ({holdings.length} currently)
+        </div>
+      )}
+
+      {/* ── Risk profile + run ───────────────────────────────────── */}
+      <div
+        className="px-5 py-4"
+        style={{ borderBottom: "1px solid hsl(var(--border))" }}
+      >
+        <div className="label mb-3">Risk Profile</div>
+        <div className="flex items-stretch gap-2 mb-4">
+          {(["conservative", "moderate", "aggressive"] as const).map((id) => {
+            const meta = RISK_META[id];
+            const profile = riskProfiles.find((p) => p.id === id);
+            const Icon = meta.icon;
+            const active = riskProfile === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setRiskProfile(id)}
+                className="flex-1 p-3 text-left transition-colors"
+                style={{
+                  border: `1px solid ${active ? "hsl(var(--primary))" : "hsl(var(--border))"}`,
+                  background: active ? "hsl(var(--primary) / 0.06)" : "transparent",
+                }}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Icon
+                    className="w-3.5 h-3.5"
+                    style={{
+                      color: active
+                        ? "hsl(var(--primary))"
+                        : "hsl(var(--muted-foreground))",
+                    }}
+                  />
+                  <span
+                    className="text-[10px] tracking-[0.15em] font-medium"
+                    style={{
+                      color: active
+                        ? "hsl(var(--foreground))"
+                        : "hsl(var(--muted-foreground))",
+                    }}
+                  >
+                    {meta.label}
+                  </span>
                 </div>
-                <div className="optimization-metric-content">
-                  <div className="optimization-metric-value" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                    --
+                <div className="text-[10px] text-muted-foreground mb-2">
+                  {meta.desc}
+                </div>
+                {profile && (
+                  <div className="flex gap-3 text-[10px] text-muted-foreground">
+                    <span>
+                      Return:{" "}
+                      <span className="text-foreground">
+                        {(profile.target_return * 100).toFixed(0)}–
+                        {((profile.target_return + 0.04) * 100).toFixed(0)}%
+                      </span>
+                    </span>
+                    <span>
+                      Max vol:{" "}
+                      <span className="text-foreground">
+                        {(profile.max_volatility * 100).toFixed(0)}%
+                      </span>
+                    </span>
                   </div>
-                  <p className="optimization-metric-description">
-                    {metric.title === "Expected Return" && "Annual expected return"}
-                    {metric.title === "Volatility" && "Annual volatility"}
-                    {metric.title === "Sharpe Ratio" && "Risk-adjusted return"}
-                    {metric.title === "CVaR (95%)" && "Conditional Value at Risk"}
-                  </p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          className="btn-terminal-primary flex items-center gap-2"
+          onClick={handleOptimize}
+          disabled={optimizeMutation.isPending || notReady}
+        >
+          {optimizeMutation.isPending ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Calculator className="w-3.5 h-3.5" />
+          )}
+          {optimizeMutation.isPending ? "OPTIMIZING..." : "RUN OPTIMIZATION"}
+        </button>
+      </div>
+
+      {/* ── Results ───────────────────────────────────────────────── */}
+      {result && (
+        <>
+          {/* Metrics strip */}
+          <div
+            className="grid grid-cols-4"
+            style={{ borderBottom: "1px solid hsl(var(--border))" }}
+          >
+            {[
+              {
+                label: "Expected Return",
+                value: `${(result.expected_return * 100).toFixed(1)}%`,
+                color: "primary",
+              },
+              {
+                label: "Volatility",
+                value: `${(result.volatility * 100).toFixed(1)}%`,
+                color: "foreground",
+              },
+              {
+                label: "Sharpe Ratio",
+                value: result.sharpe_ratio.toFixed(2),
+                color: "chart-2",
+              },
+              {
+                label: "CVaR (95%)",
+                value: result.cvar ? `${(result.cvar * 100).toFixed(1)}%` : "N/A",
+                color: "warning",
+              },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="metric-cell">
+                <div className="label mb-1">{label}</div>
+                <div
+                  className="stat-value"
+                  style={{ color: `hsl(var(--${color}))` }}
+                >
+                  {value}
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Portfolio Optimization Features Preview */}
-          <div className="optimization-card">
-            <div className="optimization-card-header">
-              <div className="optimization-card-title">Portfolio Optimization Features</div>
-            </div>
-            <div className="optimization-card-content">
-              {/* Empty content area */}
-            </div>
+          {/* Sub-tabs */}
+          <div
+            className="flex items-center gap-0"
+            style={{ borderBottom: "1px solid hsl(var(--border))" }}
+          >
+            {(
+              [
+                { id: "comparison", label: "ALLOCATION" },
+                { id: "rebalancing", label: "REBALANCING" },
+                { id: "frontier", label: "EFF. FRONTIER" },
+                { id: "metrics", label: "METRICS" },
+              ] as { id: ActiveTab; label: string }[]
+            ).map(({ id, label }) => (
+              <button
+                key={id}
+                className="text-[10px] tracking-[0.14em] px-4 py-2.5 transition-colors"
+                style={{
+                  color:
+                    activeTab === id
+                      ? "hsl(var(--foreground))"
+                      : "hsl(var(--muted-foreground))",
+                  borderBottom:
+                    activeTab === id
+                      ? "1px solid hsl(var(--primary))"
+                      : "1px solid transparent",
+                  marginBottom: "-1px",
+                }}
+                onClick={() => setActiveTab(id)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-        </div>
-      </div>
-    );
-  }
-
-  // Loading states - only show when actually loading (not when backend is down)
-  if (holdingsLoading || riskProfilesLoading) {
-    return (
-      <div className="optimization-loading">
-        <Loader2 className="optimization-loading-icon" />
-        <span className="optimization-loading-text">Loading optimization data...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="optimization-container">
-      {/* Portfolio Validation Status - Only show errors */}
-      {validation && !validation.is_valid && (
-        <div className="optimization-alert">
-          <AlertTriangle className="optimization-alert-icon" />
-          <div className="optimization-alert-content">
-            <div>
-              <div className="optimization-alert-title">Portfolio validation issues:</div>
-              <ul className="optimization-alert-list">
-                {validation.issues.map((issue, index) => (
-                  <li key={index}>{issue}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Risk Profile Selection */}
-      <div className="optimization-card">
-        <div className="optimization-card-header">
-          <div className="optimization-card-title">Risk Profile Selection</div>
-        </div>
-        <div className="optimization-card-content">
-          <div className="optimization-radio-group" role="radiogroup">
-            <div className="optimization-grid-3">
-              {riskProfiles.map((profile) => {
-                const IconComponent = profile.id === "conservative" ? Shield : 
-                                    profile.id === "moderate" ? BarChart3 : Zap;
-                return (
-                  <div key={profile.id} className="optimization-radio-item">
-                    <input
-                      type="radio"
-                      value={profile.id}
-                      id={profile.id}
-                      name="riskProfile"
-                      checked={riskProfile === profile.id}
-                      onChange={(e) => setRiskProfile(e.target.value)}
-                      className="optimization-radio-input"
-                    />
-                    <label
-                      htmlFor={profile.id}
-                      className={`optimization-radio-label ${riskProfile === profile.id ? 'checked' : ''}`}
-                    >
-                      <IconComponent className="optimization-radio-icon" />
-                      <div className="optimization-radio-content">
-                        <div className="optimization-radio-name">{profile.name}</div>
-                        <div className="optimization-radio-description">
-                          {profile.description}
-                        </div>
-                        <div className="optimization-radio-details">
-                          <div>Return: {(profile.target_return * 100).toFixed(0)}-{((profile.target_return + 0.04) * 100).toFixed(0)}%</div>
-                          <div>Volatility: ≤{(profile.max_volatility * 100).toFixed(0)}%</div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={{ marginTop: '1.5rem' }}>
-            <button 
-              onClick={handleOptimize} 
-              disabled={optimizationMutation.isPending || !holdings.length} 
-              className={`optimization-button ${!holdings.length ? 'optimization-button-full' : 'optimization-button-auto'}`}
+          {/* Allocation comparison */}
+          {activeTab === "comparison" && (
+            <div
+              className="grid grid-cols-2"
+              style={{ borderBottom: "1px solid hsl(var(--border))" }}
             >
-              {optimizationMutation.isPending ? (
+              {/* Current */}
+              <div style={{ borderRight: "1px solid hsl(var(--border))" }}>
+                <div className="section-header">
+                  <span className="label">Current Allocation</span>
+                </div>
+                <table className="w-full">
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+                      <th className="th-left">Symbol</th>
+                      <th className="th">Weight</th>
+                      <th className="th" style={{ width: "100px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(currentWeights)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([sym, w]) => (
+                        <tr key={sym} className="tr">
+                          <td className="td-left" style={{ color: "hsl(var(--primary))" }}>
+                            {sym}
+                          </td>
+                          <td className="td">{w.toFixed(1)}%</td>
+                          <td className="td">
+                            <div className="bar-track">
+                              <div className="bar-fill" style={{ width: `${w}%` }} />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Optimized */}
+              <div>
+                <div className="section-header">
+                  <span className="label">Optimized Allocation</span>
+                  <span className="text-[10px] text-muted-foreground tracking-wider">
+                    {result.optimization_method?.replace("_", " ").toUpperCase()}
+                  </span>
+                </div>
+                <table className="w-full">
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+                      <th className="th-left">Symbol</th>
+                      <th className="th">Weight</th>
+                      <th className="th">Δ</th>
+                      <th className="th" style={{ width: "80px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(result.optimal_weights)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([sym, w]) => {
+                        const wPct = w * 100;
+                        const delta = wPct - (currentWeights[sym] ?? 0);
+                        const isUp = delta > 0.5;
+                        const isDown = delta < -0.5;
+                        return (
+                          <tr key={sym} className="tr">
+                            <td className="td-left" style={{ color: "hsl(var(--primary))" }}>
+                              {sym}
+                            </td>
+                            <td className="td">{wPct.toFixed(1)}%</td>
+                            <td
+                              className="td text-xs"
+                              style={{
+                                color: isUp
+                                  ? "hsl(var(--primary))"
+                                  : isDown
+                                  ? "hsl(var(--destructive))"
+                                  : "hsl(var(--muted-foreground))",
+                              }}
+                            >
+                              {isUp ? "+" : ""}
+                              {delta.toFixed(1)}%
+                            </td>
+                            <td className="td">
+                              <div className="bar-track">
+                                <div
+                                  className="bar-fill"
+                                  style={{ width: `${wPct}%` }}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Rebalancing */}
+          {activeTab === "rebalancing" && (
+            <div>
+              <div className="section-header">
+                <span className="label">Rebalancing Trades</span>
+                <span className="text-[10px] text-muted-foreground">
+                  Total portfolio value: ${portfolioMetrics.totalValue.toLocaleString()}
+                </span>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+                    <th className="th-left">Action</th>
+                    <th className="th-left">Symbol</th>
+                    <th className="th">Amount</th>
+                    <th className="th">% of Portfolio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(result.rebalancing_trades)
+                    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+                    .map(([sym, amount]) => {
+                      const isBuy = amount > 0;
+                      const pct = (Math.abs(amount) / portfolioMetrics.totalValue) * 100;
+                      return (
+                        <tr key={sym} className="tr">
+                          <td className="td-left">
+                            <span
+                              className="text-[10px] tracking-[0.15em] px-2 py-0.5 font-medium"
+                              style={{
+                                border: `1px solid hsl(var(--${isBuy ? "primary" : "destructive"}))`,
+                                color: `hsl(var(--${isBuy ? "primary" : "destructive"}))`,
+                              }}
+                            >
+                              {isBuy ? "BUY" : "SELL"}
+                            </span>
+                          </td>
+                          <td
+                            className="td-left font-semibold"
+                            style={{ color: "hsl(var(--primary))" }}
+                          >
+                            {sym}
+                          </td>
+                          <td
+                            className="td font-semibold"
+                            style={{
+                              color: `hsl(var(--${isBuy ? "primary" : "destructive"}))`,
+                            }}
+                          >
+                            {isBuy ? "+" : "-"}$
+                            {Math.abs(amount).toLocaleString("en-US", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 0,
+                            })}
+                          </td>
+                          <td className="td text-muted-foreground">{pct.toFixed(1)}%</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Efficient Frontier */}
+          {activeTab === "frontier" && (
+            <div className="p-5">
+              <div className="label mb-3">EFFICIENT FRONTIER ({frontier.length} POINTS)</div>
+              {frontier.length > 0 ? (
                 <>
-                  <Loader2 className="optimization-button-spinner" />
-                  Optimizing...
+                  <div
+                    className="p-4"
+                    style={{ border: "1px solid hsl(var(--border))" }}
+                  >
+                    <ResponsiveContainer width="100%" height={320}>
+                      <ScatterChart
+                        margin={{ top: 20, right: 40, bottom: 40, left: 40 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="2 2"
+                          stroke="hsl(var(--border))"
+                        />
+                        <XAxis
+                          type="number"
+                          dataKey="volatility"
+                          name="Volatility"
+                          tickFormatter={(v) => `${(v * 100).toFixed(1)}%`}
+                          tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                          label={{
+                            value: "VOLATILITY",
+                            position: "insideBottom",
+                            offset: -20,
+                            fontSize: 10,
+                            fill: "hsl(var(--muted-foreground))",
+                          }}
+                        />
+                        <YAxis
+                          type="number"
+                          dataKey="expected_return"
+                          name="Return"
+                          tickFormatter={(v) => `${(v * 100).toFixed(1)}%`}
+                          tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                          label={{
+                            value: "RETURN",
+                            angle: -90,
+                            position: "insideLeft",
+                            offset: 15,
+                            fontSize: 10,
+                            fill: "hsl(var(--muted-foreground))",
+                          }}
+                        />
+                        <Tooltip
+                          cursor={{ stroke: "hsl(var(--border))" }}
+                          content={({ active, payload }) => {
+                            if (!active || !payload?.length) return null;
+                            const d = payload[0].payload;
+                            return (
+                              <div
+                                className="px-3 py-2 text-xs"
+                                style={{
+                                  background: "hsl(var(--card))",
+                                  border: "1px solid hsl(var(--border))",
+                                }}
+                              >
+                                <div style={{ color: "hsl(var(--primary))" }}>
+                                  Return: {(d.expected_return * 100).toFixed(2)}%
+                                </div>
+                                <div className="text-muted-foreground">
+                                  Volatility: {(d.volatility * 100).toFixed(2)}%
+                                </div>
+                                <div style={{ color: "hsl(var(--chart-2))" }}>
+                                  Sharpe: {d.sharpe_ratio.toFixed(3)}
+                                </div>
+                              </div>
+                            );
+                          }}
+                        />
+                        <Scatter
+                          data={frontier.map((p) => ({
+                            volatility: p.volatility,
+                            expected_return: p.expected_return,
+                            sharpe_ratio: p.sharpe_ratio,
+                          }))}
+                          fill="hsl(var(--primary))"
+                        >
+                          {frontier.map((p, i) => {
+                            const maxSharpe = Math.max(...frontier.map((x) => x.sharpe_ratio));
+                            const isOptimal = Math.abs(p.sharpe_ratio - maxSharpe) < 0.001;
+                            return (
+                              <Cell
+                                key={i}
+                                fill={
+                                  isOptimal
+                                    ? "hsl(var(--warning))"
+                                    : "hsl(var(--primary))"
+                                }
+                                opacity={isOptimal ? 1 : 0.6}
+                              />
+                            );
+                          })}
+                        </Scatter>
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex items-center gap-6 mt-3 text-[10px] text-muted-foreground tracking-wider">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ background: "hsl(var(--primary))" }}
+                      />
+                      FRONTIER POINTS
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ background: "hsl(var(--warning))" }}
+                      />
+                      OPTIMAL (MAX SHARPE)
+                    </div>
+                  </div>
                 </>
               ) : (
-                <>
-                  <Calculator className="optimization-button-icon" />
-                  Optimize Portfolio
-                </>
+                <div className="py-12 text-center text-xs text-muted-foreground tracking-wider">
+                  RUN OPTIMIZATION TO GENERATE FRONTIER
+                </div>
               )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Optimization Results */}
-      {optimizationMutation.data && (
-        <div className="optimization-grid-4">
-          <div className="optimization-metric-card">
-            <div className="optimization-metric-header">
-              <div className="optimization-metric-title">Expected Return</div>
-              <TrendingUp className="optimization-metric-icon" />
-            </div>
-            <div className="optimization-metric-content">
-              <div className="optimization-metric-value optimization-metric-value-success">
-                {(optimizationMutation.data.expected_return * 100).toFixed(1)}%
-              </div>
-              <p className="optimization-metric-description">Annual expected return</p>
-            </div>
-          </div>
-
-          <div className="optimization-metric-card">
-            <div className="optimization-metric-header">
-              <div className="optimization-metric-title">Volatility</div>
-              <BarChart3 className="optimization-metric-icon" />
-            </div>
-            <div className="optimization-metric-content">
-              <div className="optimization-metric-value">
-                {(optimizationMutation.data.volatility * 100).toFixed(1)}%
-              </div>
-              <p className="optimization-metric-description">Annual volatility</p>
-            </div>
-          </div>
-
-          <div className="optimization-metric-card">
-            <div className="optimization-metric-header">
-              <div className="optimization-metric-title">Sharpe Ratio</div>
-              <TrendingUp className="optimization-metric-icon" />
-            </div>
-            <div className="optimization-metric-content">
-              <div className="optimization-metric-value optimization-metric-value-primary">
-                {optimizationMutation.data.sharpe_ratio.toFixed(2)}
-              </div>
-              <p className="optimization-metric-description">Risk-adjusted return</p>
-            </div>
-          </div>
-
-          <div className="optimization-metric-card">
-            <div className="optimization-metric-header">
-              <div className="optimization-metric-title">CVaR (95%)</div>
-              <Shield className="optimization-metric-icon" />
-            </div>
-            <div className="optimization-metric-content">
-              <div className="optimization-metric-value optimization-metric-value-warning">
-                {optimizationMutation.data.cvar ? (optimizationMutation.data.cvar * 100).toFixed(1) : 'N/A'}%
-              </div>
-              <p className="optimization-metric-description">Conditional Value at Risk</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Portfolio Comparison */}
-      {optimizationMutation.data && (
-        <div className="optimization-tabs">
-          <div className="optimization-tabs-list">
-            <button 
-              className={`optimization-tabs-trigger ${activeTab === "comparison" ? "active" : ""}`}
-              onClick={() => setActiveTab("comparison")}
-            >
-              Allocation Comparison
-            </button>
-            <button 
-              className={`optimization-tabs-trigger ${activeTab === "rebalancing" ? "active" : ""}`}
-              onClick={() => setActiveTab("rebalancing")}
-            >
-              Rebalancing Trades
-            </button>
-            <button 
-              className={`optimization-tabs-trigger ${activeTab === "efficient-frontier" ? "active" : ""}`}
-              onClick={() => setActiveTab("efficient-frontier")}
-            >
-              Efficient Frontier
-            </button>
-            <button 
-              className={`optimization-tabs-trigger ${activeTab === "metrics" ? "active" : ""}`}
-              onClick={() => setActiveTab("metrics")}
-            >
-              Detailed Metrics
-            </button>
-          </div>
-
-          {activeTab === "comparison" && (
-            <div className="space-y-4">
-              <div className="grid gap-6 md:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <PieChart className="mr-2 h-5 w-5" />
-                      Current Allocation
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {Object.entries(currentPortfolio).map(([ticker, weight]) => (
-                      <div key={ticker} className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="font-medium">{ticker}</span>
-                          <span>{weight.toFixed(1)}%</span>
-                        </div>
-                        <Progress value={weight} className="h-2" />
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <TrendingUp className="mr-2 h-5 w-5" />
-                      Optimized Allocation
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {Object.entries(optimizationMutation.data.optimal_weights).map(([ticker, weight]) => {
-                      const currentWeight = currentPortfolio[ticker] || 0;
-                      const diff = (weight * 100) - currentWeight;
-                      return (
-                        <div key={ticker} className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="font-medium">{ticker}</span>
-                            <div className="flex items-center space-x-2">
-                              <span>{(weight * 100).toFixed(1)}%</span>
-                              <Badge
-                                variant={diff > 1 ? "default" : diff < -1 ? "destructive" : "secondary"}
-                                className="text-xs"
-                              >
-                                {diff > 0 ? "+" : ""}{diff.toFixed(1)}%
-                              </Badge>
-                            </div>
-                          </div>
-                          <Progress value={weight * 100} className="h-2" />
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              </div>
             </div>
           )}
 
-          {activeTab === "rebalancing" && (
-            <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Calculator className="mr-2 h-5 w-5" />
-                    Rebalancing Trades Required
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {Object.entries(optimizationMutation.data.rebalancing_trades).map(([symbol, amount]) => {
-                      const isBuy = amount > 0;
-                      const totalValue = holdings.reduce((sum, holding) => sum + holding.value, 0);
-                      const percentage = (Math.abs(amount) / totalValue) * 100;
-                      
-                      return (
-                        <div key={symbol} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex items-center space-x-3">
-                            <Badge variant={isBuy ? "default" : "destructive"}>
-                              {isBuy ? "BUY" : "SELL"}
-                            </Badge>
-                            <span className="font-medium">{symbol}</span>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-bold text-lg">
-                              {isBuy ? "+" : "-"}${Math.abs(amount).toLocaleString()}
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              {percentage.toFixed(1)}% of portfolio
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {activeTab === "efficient-frontier" && (
-            <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Efficient Frontier Analysis</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {frontierLoading ? (
-                    <div className="h-64 flex items-center justify-center">
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                      <span className="ml-2">Loading efficient frontier...</span>
-                    </div>
-                  ) : efficientFrontier.length > 0 ? (
-                    <div className="w-full">
-                      <div className="h-80 w-full mb-4">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ScatterChart
-                            margin={{
-                              top: 30,
-                              right: 30,
-                              bottom: 60,
-                              left: 60,
-                            }}
-                          >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis 
-                            type="number" 
-                            dataKey="volatility" 
-                            name="Volatility"
-                            label={{ value: 'Volatility (Risk)', position: 'insideBottom', offset: -10 }}
-                            domain={['dataMin - 0.01', 'dataMax + 0.01']}
-                            tickFormatter={(value) => `${(value * 100).toFixed(1)}%`}
-                            tick={{ fontSize: 12 }}
-                          />
-                          <YAxis 
-                            type="number" 
-                            dataKey="expected_return" 
-                            name="Expected Return"
-                            label={{ value: 'Expected Return', angle: -90, position: 'insideLeft', offset: -15, style: { textAnchor: 'middle' } }}
-                            domain={['dataMin - 0.01', 'dataMax + 0.01']}
-                            tickFormatter={(value) => `${(value * 100).toFixed(1)}%`}
-                            tick={{ fontSize: 12 }}
-                          />
-                          <Tooltip 
-                            content={({ active, payload, label }) => {
-                              if (active && payload && payload.length) {
-                                const data = payload[0].payload;
-                                return (
-                                  <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
-                                    <div className="space-y-2">
-                                      <div className="font-semibold text-sm border-b border-border pb-1">
-                                        Portfolio Point Details
-                                      </div>
-                                      
-                                      <div className="grid grid-cols-2 gap-2 text-xs">
-                                        <div>
-                                          <span className="text-muted-foreground">Expected Return:</span>
-                                          <div className="font-medium text-green-600">
-                                            {(data.expected_return * 100).toFixed(2)}%
-                                          </div>
-                                        </div>
-                                        <div>
-                                          <span className="text-muted-foreground">Volatility:</span>
-                                          <div className="font-medium text-orange-600">
-                                            {(data.volatility * 100).toFixed(2)}%
-                                          </div>
-                                        </div>
-                                        <div className="col-span-2">
-                                          <span className="text-muted-foreground">Sharpe Ratio:</span>
-                                          <div className="font-medium text-blue-600">
-                                            {data.sharpe_ratio.toFixed(3)}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            }}
-                          />
-                          <Scatter 
-                            name="Efficient Frontier" 
-                            data={efficientFrontier.map(point => ({
-                              volatility: point.volatility,
-                              expected_return: point.expected_return,
-                              sharpe_ratio: point.sharpe_ratio,
-                              weights: point.weights
-                            }))}
-                            fill="#8884d8"
-                          >
-                            {efficientFrontier.map((entry, index) => {
-                              const maxSharpe = Math.max(...efficientFrontier.map(p => p.sharpe_ratio));
-                              const isOptimal = Math.abs(entry.sharpe_ratio - maxSharpe) < 0.001;
-                              return (
-                                <Cell 
-                                  key={`cell-${index}`} 
-                                  fill={isOptimal ? "#ff6b6b" : "#8884d8"} 
-                                />
-                              );
-                            })}
-                          </Scatter>
-                        </ScatterChart>
-                        </ResponsiveContainer>
-                      </div>
-                      
-                      {/* Legend and Information */}
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                            <span className="text-muted-foreground">Efficient Frontier Points ({efficientFrontier.length} points)</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                            <span className="text-muted-foreground">Optimal Portfolio (Max Sharpe)</span>
-                          </div>
-                        </div>
-                        
-                        {efficientFrontier.length > 0 && (
-                          <div className="text-center">
-                            <div className="inline-flex flex-col sm:flex-row items-center gap-2 sm:gap-4 text-xs text-muted-foreground bg-muted/50 px-4 py-2 rounded-lg">
-                              <div className="flex items-center gap-1">
-                                <span className="font-medium">Return Range:</span>
-                                <span>{(Math.min(...efficientFrontier.map(p => p.expected_return)) * 100).toFixed(1)}% - {(Math.max(...efficientFrontier.map(p => p.expected_return)) * 100).toFixed(1)}%</span>
-                              </div>
-                              <div className="hidden sm:block text-muted-foreground/50">|</div>
-                              <div className="flex items-center gap-1">
-                                <span className="font-medium">Risk Range:</span>
-                                <span>{(Math.min(...efficientFrontier.map(p => p.volatility)) * 100).toFixed(1)}% - {(Math.max(...efficientFrontier.map(p => p.volatility)) * 100).toFixed(1)}%</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="h-64 flex items-center justify-center border border-dashed border-border rounded-lg">
-                      <div className="text-center text-muted-foreground">
-                        <BarChart3 className="h-12 w-12 mx-auto mb-2" />
-                        <p>Run optimization to generate efficient frontier</p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
+          {/* Metrics */}
           {activeTab === "metrics" && (
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Current Portfolio Metrics</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Value</span>
-                      <span className="font-medium">
-                        ${portfolioMetrics.totalValue.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Holdings Count</span>
-                      <span className="font-medium">{holdings.length}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Gain/Loss</span>
-                      <span className={`font-medium ${portfolioMetrics.totalGainLoss >= 0 ? 'text-success' : 'text-destructive'}`}>
-                        ${portfolioMetrics.totalGainLoss.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Return</span>
-                      <span className={`font-medium ${portfolioMetrics.totalReturnPercent >= 0 ? 'text-success' : 'text-destructive'}`}>
-                        {portfolioMetrics.totalReturnPercent.toFixed(2)}%
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
+            <div
+              className="grid grid-cols-2"
+              style={{ borderBottom: "1px solid hsl(var(--border))" }}
+            >
+              <div style={{ borderRight: "1px solid hsl(var(--border))" }}>
+                <div className="section-header">
+                  <span className="label">Current Portfolio</span>
+                </div>
+                <table className="w-full">
+                  <tbody>
+                    {[
+                      ["Total Value", `$${portfolioMetrics.totalValue.toLocaleString()}`],
+                      ["Holdings", holdings.length.toString()],
+                      [
+                        "Total P&L",
+                        `${portfolioMetrics.totalGL >= 0 ? "+" : "-"}$${Math.abs(portfolioMetrics.totalGL).toLocaleString()}`,
+                      ],
+                      ["Return", `${portfolioMetrics.returnPct >= 0 ? "+" : ""}${portfolioMetrics.returnPct.toFixed(2)}%`],
+                    ].map(([label, val]) => (
+                      <tr key={label} className="tr">
+                        <td className="td-left text-muted-foreground">{label}</td>
+                        <td className="td">{val}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Optimized Portfolio Metrics</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Expected Return</span>
-                      <span className="font-medium text-success">
-                        {(optimizationMutation.data.expected_return * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Volatility</span>
-                      <span className="font-medium text-success">
-                        {(optimizationMutation.data.volatility * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Sharpe Ratio</span>
-                      <span className="font-medium text-success">
-                        {optimizationMutation.data.sharpe_ratio.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">CVaR (95%)</span>
-                      <span className="font-medium text-success">
-                        {optimizationMutation.data.cvar ? (optimizationMutation.data.cvar * 100).toFixed(1) : 'N/A'}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Max Drawdown</span>
-                      <span className="font-medium text-success">
-                        {optimizationMutation.data.max_drawdown ? (optimizationMutation.data.max_drawdown * 100).toFixed(1) : 'N/A'}%
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
+              <div>
+                <div className="section-header">
+                  <span className="label">Optimized Portfolio</span>
+                </div>
+                <table className="w-full">
+                  <tbody>
+                    {[
+                      [
+                        "Expected Return",
+                        `${(result.expected_return * 100).toFixed(1)}%`,
+                        "primary",
+                      ],
+                      [
+                        "Volatility",
+                        `${(result.volatility * 100).toFixed(1)}%`,
+                        "foreground",
+                      ],
+                      [
+                        "Sharpe Ratio",
+                        result.sharpe_ratio.toFixed(2),
+                        "chart-2",
+                      ],
+                      [
+                        "CVaR (95%)",
+                        result.cvar ? `${(result.cvar * 100).toFixed(1)}%` : "N/A",
+                        "warning",
+                      ],
+                      [
+                        "Max Drawdown",
+                        result.max_drawdown
+                          ? `${(result.max_drawdown * 100).toFixed(1)}%`
+                          : "N/A",
+                        "destructive",
+                      ],
+                    ].map(([label, val, color]) => (
+                      <tr key={label} className="tr">
+                        <td className="td-left text-muted-foreground">{label}</td>
+                        <td
+                          className="td font-semibold"
+                          style={{ color: `hsl(var(--${color}))` }}
+                        >
+                          {val}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* No Holdings Message */}
-      {!holdings.length && (
-        <div className="optimization-empty-card">
-          <div className="optimization-empty-content">
-            <PieChart className="optimization-empty-icon" />
-            <h3 className="optimization-empty-title">No Holdings Found</h3>
-            <p className="optimization-empty-description">
-              Add some holdings to your portfolio to start optimizing
-            </p>
-            <button onClick={onNavigateToPortfolio} className="optimization-empty-button">
-              Go to Portfolio Management
-            </button>
-          </div>
-        </div>
+        </>
       )}
     </div>
   );

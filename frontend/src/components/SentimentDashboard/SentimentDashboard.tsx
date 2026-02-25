@@ -1,630 +1,633 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, AlertTriangle, Activity, Twitter, MessageSquare, Globe, RefreshCw } from "lucide-react";
-import { sentimentAPI, SentimentData, SentimentAlert, CorrelationData } from "@/lib/api";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ScatterChart, Scatter } from "recharts";
-import "./SentimentDashboard.css";
+import {
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  Activity,
+  RefreshCw,
+  X,
+} from "lucide-react";
+import { sentimentAPI, type SentimentData, type CorrelationData } from "@/lib/api";
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
+
+type ActiveTab = "overview" | "correlation" | "heatmap";
+
+const sentimentLabel = (s: number) =>
+  s >= 0.7 ? "POSITIVE" : s >= 0.5 ? "NEUTRAL" : "NEGATIVE";
+
+const sentimentColor = (s: number) =>
+  s >= 0.7
+    ? "hsl(var(--primary))"
+    : s >= 0.5
+    ? "hsl(var(--warning))"
+    : "hsl(var(--destructive))";
 
 export const SentimentDashboard = () => {
-  const [selectedTicker, setSelectedTicker] = useState("");
-  const [timeRange, setTimeRange] = useState("1d");
-  const [sentimentData, setSentimentData] = useState<SentimentData[]>([]);
-  const [alerts, setAlerts] = useState<SentimentAlert[]>([]);
-  const [loading, setLoading] = useState(false); // Start with false - no auto loading
+  const [ticker, setTicker] = useState("");
+  const [loaded, setLoaded] = useState<SentimentData[]>([]);
+  const [correlations, setCorrelations] = useState<CorrelationData[]>([]);
+  const [selectedCorr, setSelectedCorr] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasLoadedData, setHasLoadedData] = useState(false); // Track if user has loaded data
-  const [correlationData, setCorrelationData] = useState<CorrelationData[]>([]);
-  const [selectedStockForCorrelation, setSelectedStockForCorrelation] = useState<string>("");
-  const [activeTab, setActiveTab] = useState("overview");
 
-  // This function is not used anymore - we use handleLoadData instead
+  const isValid = ticker.trim().length > 0 && ticker.trim().length <= 10;
+  const hasData = loaded.length > 0;
 
-  // Load data for selected stock
-  const handleLoadData = async () => {
-    if (!isValidTicker) {
-      setError('Please enter a valid stock ticker');
-      return;
-    }
-
-    try {
-      console.log(`Loading sentiment data for ${selectedTicker}...`);
-      console.log(`User entered ticker: "${selectedTicker}"`);
-      setLoading(true);
-      setError(null);
-
-      console.log(`Calling sentiment API for: ${selectedTicker}`);
-      const stockData = await sentimentAPI.getSentiment(selectedTicker);
-
-      console.log(`Sentiment data received for ${selectedTicker}:`, stockData);
-      
-      // Add to existing stocks instead of replacing
-      setSentimentData(prevData => {
-        // Check if this stock is already in the list
-        const existingIndex = prevData.findIndex(item => item.symbol === stockData.symbol);
-        
-        if (existingIndex >= 0) {
-          // Replace existing stock data
-          const updatedData = [...prevData];
-          updatedData[existingIndex] = stockData;
-          return updatedData;
-        } else {
-          // Add new stock to the right
-          return [...prevData, stockData];
-        }
-      });
-      
-      setAlerts([]); // Clear alerts
-      setHasLoadedData(true);
-      
-      // Clear the input field for next stock
-      setSelectedTicker("");
-    } catch (err) {
-      console.error('Sentiment fetch error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load sentiment data';
-
-      // Provide user-friendly error messages
-      if (errorMessage.includes('404')) {
-        setError(`Stock ticker "${selectedTicker}" not found. Please check the ticker symbol.`);
-      } else if (errorMessage.includes('429')) {
-        setError('API rate limit exceeded. Please try again in a few minutes.');
-      } else {
-        setError(errorMessage);
-      }
-    } finally {
-      setLoading(false);
-      console.log('Sentiment load completed');
-    }
-  };
-
-
-  // Load correlation data for a specific stock
-  const handleLoadCorrelation = async (symbol: string) => {
-    try {
-      setSelectedStockForCorrelation(symbol);
-      const correlation = await sentimentAPI.getCorrelation(symbol);
-      setCorrelationData(prev => {
-        const existingIndex = prev.findIndex(item => item.symbol === symbol);
-        if (existingIndex >= 0) {
-          const updated = [...prev];
-          updated[existingIndex] = correlation;
-          return updated;
-        } else {
-          return [...prev, correlation];
-        }
-      });
-    } catch (err) {
-      console.error('Failed to load correlation data:', err);
-    }
-  };
-
-  // Clear all loaded stocks
-  const handleClearAll = () => {
-    setSentimentData([]);
-    setAlerts([]);
-    setCorrelationData([]);
-    setSelectedStockForCorrelation("");
-    setHasLoadedData(false);
-    setSelectedTicker("");
+  const handleLoad = async () => {
+    if (!isValid) return;
+    setLoading(true);
     setError(null);
-  };
-
-  // Refresh all loaded stocks
-  const handleRefreshAll = async () => {
-    if (!hasLoadedData || sentimentData.length === 0) {
-      return;
-    }
-
     try {
-      setLoading(true);
-      await sentimentAPI.refreshCache();
-      
-      // Refresh all loaded stocks
-      const refreshedData = [];
-      for (const stock of sentimentData) {
-        try {
-          const updatedStock = await sentimentAPI.getSentiment(stock.symbol);
-          refreshedData.push(updatedStock);
-        } catch (err) {
-          console.error(`Failed to refresh ${stock.symbol}:`, err);
-          refreshedData.push(stock); // Keep old data if refresh fails
+      const data = await sentimentAPI.getSentiment(ticker.trim().toUpperCase());
+      setLoaded((prev) => {
+        const idx = prev.findIndex((d) => d.symbol === data.symbol);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = data;
+          return copy;
         }
-      }
-      
-      setSentimentData(refreshedData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to refresh data');
+        return [...prev, data];
+      });
+      setTicker("");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load sentiment";
+      if (msg.includes("404"))
+        setError(`Ticker "${ticker}" not found.`);
+      else if (msg.includes("429"))
+        setError("Rate limit exceeded. Try again shortly.");
+      else setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load correlation data for all loaded stocks
-  const loadCorrelationData = async () => {
-    if (!hasLoadedData || sentimentData.length === 0) {
-      return;
-    }
-
+  const handleRefresh = async () => {
+    if (!hasData) return;
+    setLoading(true);
     try {
-      const correlations = [];
-      for (const stock of sentimentData) {
+      await sentimentAPI.refreshCache();
+      const refreshed: SentimentData[] = [];
+      for (const d of loaded) {
         try {
-          const correlation = await sentimentAPI.getCorrelation(stock.symbol);
-          correlations.push(correlation);
-        } catch (err) {
-          console.error(`Failed to get correlation for ${stock.symbol}:`, err);
+          refreshed.push(await sentimentAPI.getSentiment(d.symbol));
+        } catch {
+          refreshed.push(d);
         }
       }
-      setCorrelationData(correlations);
-    } catch (err) {
-      console.error('Error loading correlation data:', err);
+      setLoaded(refreshed);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Refresh failed");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Load correlation data when sentiment data changes
+  const handleLoadCorrelation = async (symbol: string) => {
+    setSelectedCorr(symbol);
+    try {
+      const corr = await sentimentAPI.getCorrelation(symbol);
+      setCorrelations((prev) => {
+        const idx = prev.findIndex((c) => c.symbol === symbol);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = corr;
+          return copy;
+        }
+        return [...prev, corr];
+      });
+    } catch {
+      // keep existing if refresh fails
+    }
+  };
+
   useEffect(() => {
-    if (hasLoadedData && sentimentData.length > 0) {
-      loadCorrelationData();
+    if (hasData) {
+      loaded.forEach((d) => handleLoadCorrelation(d.symbol));
     }
-  }, [sentimentData, hasLoadedData]);
+  }, [loaded, hasData]);
 
-  const getSentimentColor = (sentiment: number) => {
-    if (sentiment >= 0.7) return "text-success";
-    if (sentiment >= 0.5) return "text-warning";
-    return "text-destructive";
+  const clearAll = () => {
+    setLoaded([]);
+    setCorrelations([]);
+    setSelectedCorr("");
+    setError(null);
+    setTicker("");
+    setActiveTab("overview");
   };
-
-  const getSentimentBadge = (sentiment: number) => {
-    if (sentiment >= 0.7) return { label: "Positive", variant: "default" as const };
-    if (sentiment >= 0.5) return { label: "Neutral", variant: "secondary" as const };
-    return { label: "Negative", variant: "destructive" as const };
-  };
-
-  // Transform API data to match UI expectations
-  // Validate ticker input
-  const isValidTicker = selectedTicker.trim().length > 0 && selectedTicker.trim().length <= 10;
-
-  const transformedData = sentimentData.map(item => ({
-    ticker: item.symbol,
-    sentiment: item.overall_sentiment,
-    price: item.price || 0,
-    priceChange: item.price_change || 0,
-    volume: item.volume || 0,
-    mentions: item.total_mentions,
-    sources: item.sources
-  }));
-
 
   return (
-    <div className="sentiment-container">
-      {/* Controls */}
-      <div className="sentiment-card">
-        <div className="sentiment-card-header">
-          <div className="sentiment-controls-header">
-            <div className="sentiment-card-title">Sentiment Analysis Controls</div>
-            {hasLoadedData && (
-              <div className="sentiment-controls-info">
-                <span className="sentiment-controls-count">
-                  {sentimentData.length} stock{sentimentData.length !== 1 ? 's' : ''} loaded
-                </span>
-                <button className="sentiment-controls-button sentiment-controls-button-sm" onClick={handleClearAll}>
-                  Clear All
-                </button>
-              </div>
-            )}
-          </div>
+    <div>
+      {/* ── Controls ──────────────────────────────────────────────── */}
+      <div
+        className="px-5 py-3 flex items-end gap-3 flex-wrap"
+        style={{ borderBottom: "1px solid hsl(var(--border))" }}
+      >
+        <div className="space-y-1">
+          <div className="label">Ticker Symbol</div>
+          <input
+            className="input-terminal"
+            style={{ width: "130px" }}
+            placeholder="AAPL"
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === "Enter" && handleLoad()}
+          />
         </div>
-        <div className="sentiment-card-content">
-          <div className="sentiment-grid-3">
-            <div className="sentiment-form-group">
-              <label className="sentiment-label">Stock Ticker</label>
-              <input
-                type="text"
-                placeholder="Enter stock ticker (e.g., AAPL, TSLA, NVDA)"
-                value={selectedTicker}
-                onChange={(e) => setSelectedTicker(e.target.value.toUpperCase())}
-                className={`sentiment-input ${!isValidTicker && selectedTicker.length > 0 ? 'sentiment-input-error' : ''}`}
-              />
-              {!isValidTicker && selectedTicker.length > 0 && (
-                <p className="sentiment-error-text">Please enter a valid ticker symbol</p>
-              )}
-            </div>
-            
-            <div className="sentiment-form-group">
-              <label className="sentiment-label">Time Range</label>
-              <div className="sentiment-select">
-                <select
-                  value={timeRange}
-                  onChange={(e) => setTimeRange(e.target.value)}
-                  className="sentiment-select-trigger"
-                >
-                  <option value="1d">1 Day</option>
-                  <option value="1w">1 Week</option>
-                  <option value="1m">1 Month</option>
-                </select>
-              </div>
-            </div>
 
-            <div style={{ display: 'flex', alignItems: 'end' }}>
-              <button
-                className="sentiment-button sentiment-button-full"
-                onClick={handleLoadData}
-                disabled={loading || !isValidTicker}
-              >
-                <Activity className={`sentiment-button-icon ${loading ? 'sentiment-button-spinner' : ''}`} />
-                {loading ? 'Loading...' : 'Load Sentiment Data'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <button
+          className="btn-terminal-primary flex items-center gap-1.5"
+          onClick={handleLoad}
+          disabled={loading || !isValid}
+        >
+          <Activity className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+          {loading ? "LOADING..." : "LOAD"}
+        </button>
+
+        {hasData && (
+          <>
+            <button
+              className="btn-terminal flex items-center gap-1.5"
+              onClick={handleRefresh}
+              disabled={loading}
+            >
+              <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+              REFRESH ALL
+            </button>
+            <button
+              className="btn-terminal-ghost flex items-center gap-1.5"
+              onClick={clearAll}
+            >
+              <X className="w-3 h-3" />
+              CLEAR ALL
+            </button>
+            <span className="text-[10px] text-muted-foreground tracking-wider ml-auto">
+              {loaded.length} STOCK{loaded.length !== 1 ? "S" : ""} LOADED
+            </span>
+          </>
+        )}
       </div>
 
-      {/* Error State */}
+      {/* ── Error ─────────────────────────────────────────────────── */}
       {error && (
-        <div className="sentiment-error-card">
-          <div className="sentiment-error-content">
-            <div className="sentiment-error-message">
-              <AlertTriangle className="sentiment-error-icon" />
-              <p className="sentiment-error-text">{error}</p>
-            </div>
+        <div
+          className="flex items-center gap-2 px-5 py-2 text-xs"
+          style={{
+            borderBottom: "1px solid hsl(var(--border))",
+            color: "hsl(var(--destructive))",
+            background: "hsl(var(--destructive) / 0.06)",
+          }}
+        >
+          <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+          {error}
+          <button
+            className="ml-auto btn-terminal-ghost"
+            onClick={() => setError(null)}
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Empty state ───────────────────────────────────────────── */}
+      {!hasData && !loading && (
+        <div className="px-5 py-16 text-center">
+          <Activity
+            className="w-8 h-8 mx-auto mb-3"
+            style={{ color: "hsl(var(--muted-foreground))" }}
+          />
+          <div className="text-xs text-muted-foreground tracking-[0.15em]">
+            ENTER A TICKER TO LOAD SENTIMENT DATA
           </div>
         </div>
       )}
 
-      {/* Initial Message */}
-      {!hasLoadedData && !loading && !error && (
-        <div className="sentiment-empty-card">
-          <div className="sentiment-empty-content">
-            <div className="sentiment-empty-center">
-              <Activity className="sentiment-empty-icon" />
-              <div>
-                <h3 className="sentiment-empty-title">Enter a stock ticker and load sentiment data</h3>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-
-      {/* Show tabs only when data is loaded */}
-      {hasLoadedData && transformedData.length > 0 && (
-        <div className="sentiment-tabs">
-          <div className="sentiment-tabs-header">
-            <div className="sentiment-tabs-list">
-              <button 
-                className={`sentiment-tabs-trigger ${activeTab === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveTab('overview')}
+      {/* ── Tabs (when data loaded) ───────────────────────────────── */}
+      {hasData && (
+        <>
+          <div
+            className="flex items-center gap-0"
+            style={{ borderBottom: "1px solid hsl(var(--border))" }}
+          >
+            {(["overview", "correlation", "heatmap"] as ActiveTab[]).map((tab) => (
+              <button
+                key={tab}
+                className="text-[10px] tracking-[0.15em] px-4 py-2.5 transition-colors"
+                style={{
+                  color:
+                    activeTab === tab
+                      ? "hsl(var(--foreground))"
+                      : "hsl(var(--muted-foreground))",
+                  borderBottom:
+                    activeTab === tab
+                      ? "1px solid hsl(var(--primary))"
+                      : "1px solid transparent",
+                  marginBottom: "-1px",
+                }}
+                onClick={() => setActiveTab(tab)}
               >
-                Overview
+                {tab === "overview"
+                  ? "OVERVIEW"
+                  : tab === "correlation"
+                  ? "PRICE CORRELATION"
+                  : "HEATMAP"}
               </button>
-              <button 
-                className={`sentiment-tabs-trigger ${activeTab === 'correlation' ? 'active' : ''}`}
-                onClick={() => setActiveTab('correlation')}
-              >
-                Price Correlation
-              </button>
-              <button 
-                className={`sentiment-tabs-trigger ${activeTab === 'heatmap' ? 'active' : ''}`}
-                onClick={() => setActiveTab('heatmap')}
-              >
-                Sentiment Heatmap
-              </button>
-            </div>
-            <button className="sentiment-controls-button sentiment-controls-button-sm" onClick={handleRefreshAll} disabled={loading || sentimentData.length === 0}>
-              <RefreshCw className={`sentiment-button-icon ${loading ? 'sentiment-button-spinner' : ''}`} />
-              Refresh All
-            </button>
+            ))}
           </div>
 
-          <div className="sentiment-tabs-content">
-            {/* Overview Tab */}
-            {activeTab === 'overview' && (
-              <div className="sentiment-grid-3-lg">
-                {transformedData.map(stock => {
-                  const badge = getSentimentBadge(stock.sentiment);
+          {/* Overview tab */}
+          {activeTab === "overview" && (
+            <div className="p-5">
+              <div
+                className="grid gap-0"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                  border: "1px solid hsl(var(--border))",
+                }}
+              >
+                {loaded.map((stock) => {
+                  const isPos = (stock.price_change ?? 0) >= 0;
                   return (
-                    <div key={stock.ticker} className={`sentiment-stock-card ${selectedTicker === stock.ticker ? 'selected' : ''}`}>
-                      <div className="sentiment-stock-header">
-                        <div className="sentiment-stock-title">{stock.ticker}</div>
-                        <span className={`sentiment-badge ${
-                          badge.variant === 'default' ? 'sentiment-badge-default' :
-                          badge.variant === 'secondary' ? 'sentiment-badge-secondary' :
-                          'sentiment-badge-destructive'
-                        }`}>{badge.label}</span>
+                    <div
+                      key={stock.symbol}
+                      className="p-4"
+                      style={{ borderRight: "1px solid hsl(var(--border))", borderBottom: "1px solid hsl(var(--border))" }}
+                    >
+                      {/* Header */}
+                      <div className="flex items-center justify-between mb-3">
+                        <span
+                          className="text-sm font-bold"
+                          style={{ color: "hsl(var(--primary))" }}
+                        >
+                          {stock.symbol}
+                        </span>
+                        <span
+                          className="text-[10px] tracking-[0.12em] font-medium px-1.5 py-0.5"
+                          style={{
+                            color: sentimentColor(stock.overall_sentiment),
+                            border: `1px solid ${sentimentColor(stock.overall_sentiment)}`,
+                          }}
+                        >
+                          {sentimentLabel(stock.overall_sentiment)}
+                        </span>
                       </div>
-                      <div className="sentiment-stock-content">
-                        <div className="sentiment-stock-main">
-                          <div className="sentiment-stock-price">
-                            <div className="sentiment-stock-price-value">${stock.price.toFixed(2)}</div>
-                            <div className={`sentiment-stock-price-change ${stock.priceChange >= 0 ? 'sentiment-stock-price-change-success' : 'sentiment-stock-price-change-destructive'}`}>
-                              {stock.priceChange >= 0 ? (
-                                <TrendingUp className="sentiment-stock-price-icon" />
-                              ) : (
-                                <TrendingDown className="sentiment-stock-price-icon" />
-                              )}
-                              {stock.priceChange >= 0 ? '+' : ''}{stock.priceChange}%
-                            </div>
-                          </div>
-                          <div className="sentiment-stock-sentiment">
-                            <div className={`sentiment-stock-sentiment-value ${
-                              stock.sentiment >= 0.7 ? 'sentiment-stock-sentiment-value-success' :
-                              stock.sentiment >= 0.5 ? 'sentiment-stock-sentiment-value-warning' :
-                              'sentiment-stock-sentiment-value-destructive'
-                            }`}>
-                              {(stock.sentiment * 100).toFixed(0)}%
-                            </div>
-                            <div className="sentiment-stock-sentiment-label">sentiment</div>
-                          </div>
-                        </div>
 
-                        <div className="sentiment-stock-details">
-                          <div className="sentiment-stock-detail-row">
-                            <span className="sentiment-stock-detail-label">Mentions</span>
-                            <span>{stock.mentions.toLocaleString()}</span>
+                      {/* Price row */}
+                      <div className="flex items-end justify-between mb-3">
+                        <div>
+                          <div className="text-base font-semibold">
+                            ${(stock.price ?? 0).toFixed(2)}
+                          </div>
+                          <div
+                            className="flex items-center gap-1 text-xs"
+                            style={{
+                              color: `hsl(var(--${isPos ? "primary" : "destructive"}))`,
+                            }}
+                          >
+                            {isPos ? (
+                              <TrendingUp className="w-3 h-3" />
+                            ) : (
+                              <TrendingDown className="w-3 h-3" />
+                            )}
+                            {isPos ? "+" : ""}
+                            {(stock.price_change ?? 0).toFixed(2)}%
                           </div>
                         </div>
+                        <div className="text-right">
+                          <div
+                            className="text-xl font-bold"
+                            style={{ color: sentimentColor(stock.overall_sentiment) }}
+                          >
+                            {(stock.overall_sentiment * 100).toFixed(0)}%
+                          </div>
+                          <div className="text-[10px] text-muted-foreground tracking-wider">
+                            SENTIMENT
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sentiment bar */}
+                      <div className="bar-track mb-3">
+                        <div
+                          className="bar-fill"
+                          style={{
+                            width: `${stock.overall_sentiment * 100}%`,
+                            background: sentimentColor(stock.overall_sentiment),
+                          }}
+                        />
+                      </div>
+
+                      {/* Stats */}
+                      <div className="grid grid-cols-3 gap-0">
+                        {[
+                          ["MENTIONS", stock.total_mentions.toLocaleString()],
+                          ["NEWS", stock.sources.news.toString()],
+                          ["REDDIT", stock.sources.reddit.toString()],
+                        ].map(([label, val]) => (
+                          <div key={label}>
+                            <div className="text-[10px] text-muted-foreground tracking-wider">
+                              {label}
+                            </div>
+                            <div className="text-xs font-medium">{val}</div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Price Correlation Tab */}
-            {activeTab === 'correlation' && (
-              <div className="sentiment-correlation-card">
-                <div className="sentiment-correlation-header">
-                  <div className="sentiment-correlation-title">Price vs Sentiment Correlation</div>
-                  <div className="sentiment-correlation-buttons">
-                    {transformedData.map(stock => (
-                      <button
-                        key={stock.ticker}
-                        className={`sentiment-correlation-button ${selectedStockForCorrelation === stock.ticker ? 'active' : ''}`}
-                        onClick={() => handleLoadCorrelation(stock.ticker)}
-                      >
-                        {stock.ticker}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="sentiment-correlation-content">
-                  {selectedStockForCorrelation ? (
-                    <div className="space-y-4">
-                      {(() => {
-                        const currentCorrelation = correlationData.find(c => c.symbol === selectedStockForCorrelation);
-                        const currentStock = transformedData.find(s => s.ticker === selectedStockForCorrelation);
-                        
-                        if (!currentCorrelation || !currentStock) {
-                          return (
-                            <div className="sentiment-correlation-placeholder">
-                              <div className="sentiment-correlation-placeholder-content">
-                                <Activity className="sentiment-correlation-placeholder-icon" />
-                                <p className="sentiment-correlation-placeholder-text">Loading correlation data for {selectedStockForCorrelation}...</p>
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div className="space-y-6">
-                            {/* Current Metrics */}
-                            <div className="sentiment-correlation-metrics">
-                              <div className="sentiment-correlation-metric">
-                                <div className="sentiment-correlation-metric-value sentiment-correlation-metric-value-primary">${currentStock.price.toFixed(2)}</div>
-                                <div className="sentiment-correlation-metric-label">Current Price</div>
-                              </div>
-                              <div className="sentiment-correlation-metric">
-                                <div className={`sentiment-correlation-metric-value ${
-                                  currentStock.sentiment >= 0.7 ? 'sentiment-correlation-metric-value-success' :
-                                  currentStock.sentiment >= 0.5 ? 'sentiment-correlation-metric-value-warning' :
-                                  'sentiment-correlation-metric-value-destructive'
-                                }`}>
-                                  {(currentStock.sentiment * 100).toFixed(0)}%
-                                </div>
-                                <div className="sentiment-correlation-metric-label">Sentiment</div>
-                              </div>
-                              <div className="sentiment-correlation-metric">
-                                <div className={`sentiment-correlation-metric-value ${currentStock.priceChange >= 0 ? 'sentiment-correlation-metric-value-success' : 'sentiment-correlation-metric-value-destructive'}`}>
-                                  {currentStock.priceChange >= 0 ? '+' : ''}{currentStock.priceChange}%
-                                </div>
-                                <div className="sentiment-correlation-metric-label">Price Change</div>
-                              </div>
-                              <div className="sentiment-correlation-metric">
-                                <div className="sentiment-correlation-metric-value sentiment-correlation-metric-value-blue">
-                                  {currentStock.mentions}
-                                </div>
-                                <div className="sentiment-correlation-metric-label">Mentions</div>
-                              </div>
-                            </div>
-
-                            {/* Actual Price vs Sentiment Chart */}
-                            <div className="sentiment-correlation-chart">
-                              <h4 className="sentiment-correlation-chart-title">Price vs Sentiment Over Time - {currentStock.ticker}</h4>
-                              <ChartContainer
-                                config={{
-                                  price: {
-                                    label: "Price ($)",
-                                    color: "hsl(var(--chart-1))",
-                                  },
-                                  sentiment: {
-                                    label: "Sentiment (%)",
-                                    color: "hsl(var(--chart-2))",
-                                  },
-                                }}
-                                className="h-[400px] w-full"
-                              >
-                                <LineChart
-                                  data={(() => {
-                                    // Generate mock historical data for visualization
-                                    const basePrice = currentStock.price;
-                                    const baseSentiment = currentStock.sentiment * 100;
-                                    const hours = [];
-                                    
-                                    for (let i = 23; i >= 0; i--) {
-                                      const time = new Date();
-                                      time.setHours(time.getHours() - i);
-                                      
-                                      // Generate realistic price fluctuations
-                                      const priceVariation = (Math.random() - 0.5) * (basePrice * 0.02); // ±2% variation
-                                      const price = Math.max(0, basePrice + priceVariation);
-                                      
-                                      // Generate sentiment that somewhat correlates with price changes
-                                      const sentimentBase = baseSentiment;
-                                      const correlation = Math.random() > 0.3 ? 1 : -1; // 70% correlation
-                                      const sentimentVariation = (priceVariation / basePrice) * 100 * correlation + (Math.random() - 0.5) * 10;
-                                      const sentiment = Math.max(0, Math.min(100, sentimentBase + sentimentVariation));
-                                      
-                                      hours.push({
-                                        time: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                        price: parseFloat(price.toFixed(2)),
-                                        sentiment: parseFloat(sentiment.toFixed(1)),
-                                        // Normalize sentiment for secondary Y-axis (scale to price range)
-                                        sentimentScaled: parseFloat((sentiment * basePrice / 100).toFixed(2))
-                                      });
-                                    }
-                                    
-                                    return hours;
-                                  })()}
-                                  margin={{
-                                    top: 20,
-                                    right: 80,
-                                    left: 20,
-                                    bottom: 20,
-                                  }}
-                                >
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis 
-                                    dataKey="time" 
-                                    hide={true}
-                                  />
-                                  <YAxis 
-                                    yAxisId="price"
-                                    orientation="left"
-                                    domain={['dataMin - 5', 'dataMax + 5']}
-                                    tick={{ fontSize: 12 }}
-                                    label={{ value: 'Price ($)', angle: -90, position: 'insideLeft' }}
-                                  />
-                                  <YAxis 
-                                    yAxisId="sentiment"
-                                    orientation="right"
-                                    domain={[0, 100]}
-                                    tick={{ fontSize: 12 }}
-                                    label={{ value: 'Sentiment (%)', angle: 90, position: 'insideRight' }}
-                                  />
-                                  <ChartTooltip 
-                                    content={({ active, payload, label }) => {
-                                      if (active && payload && payload.length) {
-                                        return (
-                                          <div className="rounded-lg border bg-background p-3 shadow-sm">
-                                            <div className="grid gap-2">
-                                              <div className="font-medium">{label}</div>
-                                              <div className="grid gap-1 text-sm">
-                                                <div className="flex items-center gap-2">
-                                                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                                                  <span>Price: ${payload[0]?.value}</span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                                                  <span>Sentiment: {payload[1]?.value}%</span>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    }}
-                                  />
-                                  <Line 
-                                    yAxisId="price"
-                                    type="monotone" 
-                                    dataKey="price" 
-                                    stroke="hsl(var(--chart-1))"
-                                    strokeWidth={2}
-                                    dot={{ r: 3 }}
-                                    activeDot={{ r: 5 }}
-                                    name="Price"
-                                  />
-                                  <Line 
-                                    yAxisId="sentiment"
-                                    type="monotone" 
-                                    dataKey="sentiment" 
-                                    stroke="hsl(var(--chart-2))"
-                                    strokeWidth={2}
-                                    dot={{ r: 3 }}
-                                    activeDot={{ r: 5 }}
-                                    strokeDasharray="5 5"
-                                    name="Sentiment"
-                                  />
-                                </LineChart>
-                              </ChartContainer>
-                            </div>
-
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div className="sentiment-correlation-placeholder">
-                      <div className="sentiment-correlation-placeholder-content">
-                        <Activity className="sentiment-correlation-placeholder-icon" />
-                        <p className="sentiment-correlation-placeholder-text">Select a stock above to view price vs sentiment correlation</p>
-                        <p className="sentiment-correlation-placeholder-subtext">Click on any stock button to load correlation analysis</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+          {/* Correlation tab */}
+          {activeTab === "correlation" && (
+            <div className="p-5">
+              {/* Stock selector */}
+              <div className="flex items-center gap-1 mb-4">
+                {loaded.map((stock) => (
+                  <button
+                    key={stock.symbol}
+                    className="text-[10px] tracking-[0.12em] px-3 py-1.5 transition-colors"
+                    style={{
+                      border: "1px solid",
+                      borderColor:
+                        selectedCorr === stock.symbol
+                          ? "hsl(var(--primary))"
+                          : "hsl(var(--border))",
+                      color:
+                        selectedCorr === stock.symbol
+                          ? "hsl(var(--primary))"
+                          : "hsl(var(--muted-foreground))",
+                    }}
+                    onClick={() => handleLoadCorrelation(stock.symbol)}
+                  >
+                    {stock.symbol}
+                  </button>
+                ))}
               </div>
-            )}
 
-            {/* Sentiment Heatmap Tab */}
-            {activeTab === 'heatmap' && (
-              <div className="sentiment-heatmap-card">
-                <div className="sentiment-heatmap-header">
-                  <div className="sentiment-heatmap-title">Sentiment Heatmap</div>
-                </div>
-                <div className="sentiment-heatmap-content">
-                  <div className="sentiment-heatmap-grid">
-                    {transformedData.map(stock => {
-                      const intensity = stock.sentiment;
-                      const bgClass = intensity >= 0.7 ? 'sentiment-heatmap-item-success' : 
-                                     intensity >= 0.5 ? 'sentiment-heatmap-item-warning' : 'sentiment-heatmap-item-destructive';
-                      const opacity = Math.abs(intensity - 0.5) * 2;
-                      
-                      return (
-                        <div
-                          key={stock.ticker}
-                          className={`sentiment-heatmap-item ${bgClass}`}
-                          style={{ opacity: 0.3 + (opacity * 0.7) }}
-                          onClick={() => setSelectedTicker(stock.ticker)}
+              {selectedCorr ? (
+                (() => {
+                  const stock = loaded.find((d) => d.symbol === selectedCorr);
+                  if (!stock) return null;
+
+                  // Build 24h mock data (same as original)
+                  const basePrice = stock.price ?? 100;
+                  const baseSentiment = stock.overall_sentiment * 100;
+                  const chartData = Array.from({ length: 24 }, (_, i) => {
+                    const t = new Date();
+                    t.setHours(t.getHours() - (23 - i));
+                    const priceVar = (Math.random() - 0.5) * basePrice * 0.02;
+                    const price = Math.max(0, basePrice + priceVar);
+                    const corrFactor = Math.random() > 0.3 ? 1 : -1;
+                    const sentVar =
+                      (priceVar / basePrice) * 100 * corrFactor +
+                      (Math.random() - 0.5) * 10;
+                    const sentiment = Math.max(
+                      0,
+                      Math.min(100, baseSentiment + sentVar)
+                    );
+                    return {
+                      time: t.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }),
+                      price: parseFloat(price.toFixed(2)),
+                      sentiment: parseFloat(sentiment.toFixed(1)),
+                    };
+                  });
+
+                  return (
+                    <div>
+                      {/* Metrics */}
+                      <div
+                        className="grid grid-cols-4 mb-4"
+                        style={{ border: "1px solid hsl(var(--border))" }}
+                      >
+                        {[
+                          ["Current Price", `$${(stock.price ?? 0).toFixed(2)}`, "foreground"],
+                          [
+                            "Sentiment",
+                            `${(stock.overall_sentiment * 100).toFixed(0)}%`,
+                            stock.overall_sentiment >= 0.7
+                              ? "primary"
+                              : stock.overall_sentiment >= 0.5
+                              ? "warning"
+                              : "destructive",
+                          ],
+                          [
+                            "Price Change",
+                            `${(stock.price_change ?? 0) >= 0 ? "+" : ""}${(stock.price_change ?? 0).toFixed(2)}%`,
+                            (stock.price_change ?? 0) >= 0 ? "primary" : "destructive",
+                          ],
+                          ["Mentions", stock.total_mentions.toLocaleString(), "foreground"],
+                        ].map(([label, val, color]) => (
+                          <div
+                            key={label}
+                            className="p-3"
+                            style={{ borderRight: "1px solid hsl(var(--border))" }}
+                          >
+                            <div className="label mb-1">{label}</div>
+                            <div
+                              className="text-base font-semibold"
+                              style={{
+                                color: `hsl(var(--${color}))`,
+                              }}
+                            >
+                              {val}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Chart */}
+                      <div
+                        className="p-4"
+                        style={{ border: "1px solid hsl(var(--border))" }}
+                      >
+                        <div className="label mb-3">
+                          PRICE VS SENTIMENT — {selectedCorr} (24H)
+                        </div>
+                        <ChartContainer
+                          config={{
+                            price: { label: "Price ($)", color: "hsl(var(--chart-2))" },
+                            sentiment: { label: "Sentiment (%)", color: "hsl(var(--primary))" },
+                          }}
+                          className="h-[320px] w-full"
                         >
-                          <div className="sentiment-heatmap-ticker">{stock.ticker}</div>
-                          <div className="sentiment-heatmap-percentage">
-                            {(intensity * 100).toFixed(0)}%
+                          <LineChart
+                            data={chartData}
+                            margin={{ top: 10, right: 60, left: 10, bottom: 10 }}
+                          >
+                            <CartesianGrid
+                              strokeDasharray="2 2"
+                              stroke="hsl(var(--border))"
+                            />
+                            <XAxis
+                              dataKey="time"
+                              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                              hide
+                            />
+                            <YAxis
+                              yAxisId="price"
+                              orientation="left"
+                              domain={["dataMin - 2", "dataMax + 2"]}
+                              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                              tickFormatter={(v) => `$${v}`}
+                            />
+                            <YAxis
+                              yAxisId="sentiment"
+                              orientation="right"
+                              domain={[0, 100]}
+                              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                              tickFormatter={(v) => `${v}%`}
+                            />
+                            <ChartTooltip
+                              content={({ active, payload }) => {
+                                if (!active || !payload?.length) return null;
+                                return (
+                                  <div
+                                    className="px-3 py-2 text-xs"
+                                    style={{
+                                      background: "hsl(var(--card))",
+                                      border: "1px solid hsl(var(--border))",
+                                    }}
+                                  >
+                                    <div className="text-muted-foreground mb-1">
+                                      {payload[0]?.payload?.time}
+                                    </div>
+                                    <div style={{ color: "hsl(var(--chart-2))" }}>
+                                      Price: ${payload[0]?.value}
+                                    </div>
+                                    <div style={{ color: "hsl(var(--primary))" }}>
+                                      Sentiment: {payload[1]?.value}%
+                                    </div>
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Line
+                              yAxisId="price"
+                              type="monotone"
+                              dataKey="price"
+                              stroke="hsl(var(--chart-2))"
+                              strokeWidth={1.5}
+                              dot={false}
+                            />
+                            <Line
+                              yAxisId="sentiment"
+                              type="monotone"
+                              dataKey="sentiment"
+                              stroke="hsl(var(--primary))"
+                              strokeWidth={1.5}
+                              strokeDasharray="4 2"
+                              dot={false}
+                            />
+                          </LineChart>
+                        </ChartContainer>
+                        <div className="flex items-center gap-6 mt-2">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-8 h-px"
+                              style={{ background: "hsl(var(--chart-2))" }}
+                            />
+                            <span className="text-[10px] text-muted-foreground">Price</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-8 h-px"
+                              style={{
+                                background: "hsl(var(--primary))",
+                                borderTop: "1px dashed hsl(var(--primary))",
+                              }}
+                            />
+                            <span className="text-[10px] text-muted-foreground">
+                              Sentiment
+                            </span>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <div className="sentiment-heatmap-legend">
-                    <div className="sentiment-heatmap-legend-item">
-                      <div className="sentiment-heatmap-legend-color sentiment-heatmap-legend-color-destructive"></div>
-                      <span>Negative</span>
+                      </div>
                     </div>
-                    <div className="sentiment-heatmap-legend-item">
-                      <div className="sentiment-heatmap-legend-color sentiment-heatmap-legend-color-warning"></div>
-                      <span>Neutral</span>
+                  );
+                })()
+              ) : (
+                <div className="py-12 text-center text-xs text-muted-foreground tracking-wider">
+                  SELECT A STOCK ABOVE TO VIEW CORRELATION
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Heatmap tab */}
+          {activeTab === "heatmap" && (
+            <div className="p-5">
+              <div
+                className="grid mb-4"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                  gap: "1px",
+                  background: "hsl(var(--border))",
+                  border: "1px solid hsl(var(--border))",
+                }}
+              >
+                {loaded.map((stock) => {
+                  const intensity = stock.overall_sentiment;
+                  const color = sentimentColor(intensity);
+                  const opacity = 0.15 + Math.abs(intensity - 0.5) * 2 * 0.65;
+                  return (
+                    <div
+                      key={stock.symbol}
+                      className="p-4 cursor-pointer transition-opacity hover:opacity-100 flex flex-col items-center justify-center"
+                      style={{
+                        background: `hsl(var(--background))`,
+                        borderLeft: `3px solid ${color}`,
+                        opacity,
+                      }}
+                      onClick={() => setSelectedCorr(stock.symbol)}
+                    >
+                      <div
+                        className="text-sm font-bold mb-1"
+                        style={{ color }}
+                      >
+                        {stock.symbol}
+                      </div>
+                      <div className="text-lg font-semibold" style={{ color }}>
+                        {(intensity * 100).toFixed(0)}%
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-1 tracking-wider">
+                        {sentimentLabel(intensity)}
+                      </div>
                     </div>
-                    <div className="sentiment-heatmap-legend-item">
-                      <div className="sentiment-heatmap-legend-color sentiment-heatmap-legend-color-success"></div>
-                      <span>Positive</span>
-                    </div>
-                  </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-6 text-[10px] text-muted-foreground tracking-wider">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3"
+                    style={{ background: "hsl(var(--destructive))" }}
+                  />
+                  NEGATIVE
+                </div>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3"
+                    style={{ background: "hsl(var(--warning))" }}
+                  />
+                  NEUTRAL
+                </div>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3"
+                    style={{ background: "hsl(var(--primary))" }}
+                  />
+                  POSITIVE
                 </div>
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

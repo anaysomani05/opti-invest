@@ -1,332 +1,330 @@
-import { useState, useEffect } from "react";
-import "./PortfolioManagement.css";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, Plus, Trash2, Edit } from "lucide-react";
+import { Plus, Trash2, Upload, AlertTriangle, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { portfolioAPI, type HoldingWithMetrics, type HoldingCreate } from "@/lib/api";
+import { portfolioAPI, type HoldingCreate } from "@/lib/api";
+
+const fmt$ = (n: number) =>
+  `$${Math.abs(n).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+type InputMode = "manual" | "csv";
 
 export const PortfolioManagement = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  // Fetch holdings with real-time metrics
-  const { data: holdings = [], isLoading, error } = useQuery({
-    queryKey: ['holdings-with-metrics'],
+  const [inputMode, setInputMode] = useState<InputMode>("manual");
+  const [form, setForm] = useState({ symbol: "", quantity: "", buy_price: "" });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["holdings-with-metrics"] });
+    queryClient.invalidateQueries({ queryKey: ["portfolio-overview"] });
+  };
+
+  const { data: holdings = [], isLoading } = useQuery({
+    queryKey: ["holdings-with-metrics"],
     queryFn: portfolioAPI.getHoldingsWithMetrics,
-    refetchInterval: 30000, // Refetch every 30 seconds for updated prices
+    refetchInterval: 30000,
   });
 
-  const [newHolding, setNewHolding] = useState({
-    symbol: "",
-    quantity: "",
-    buy_price: ""
-  });
-
-  // Mutations
-  const addHoldingMutation = useMutation({
+  const addMutation = useMutation({
     mutationFn: portfolioAPI.createHolding,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['holdings-with-metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['portfolio-overview'] });
-      setNewHolding({ symbol: "", quantity: "", buy_price: "" });
-      toast({
-        title: "Holding Added",
-        description: "The holding has been added to your portfolio."
-      });
+      invalidate();
+      setForm({ symbol: "", quantity: "", buy_price: "" });
+      toast({ title: "Position added" });
     },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: `Failed to add holding: ${error.message}`,
-        variant: "destructive"
-      });
-    }
+    onError: (e: Error) =>
+      toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const deleteHoldingMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: portfolioAPI.deleteHolding,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['holdings-with-metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['portfolio-overview'] });
-      toast({
-        title: "Holding Removed",
-        description: "The holding has been removed from your portfolio."
-      });
+      invalidate();
+      toast({ title: "Position removed" });
     },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: `Failed to remove holding: ${error.message}`,
-        variant: "destructive"
-      });
-    }
+    onError: (e: Error) =>
+      toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const uploadCSVMutation = useMutation({
+  const csvMutation = useMutation({
     mutationFn: portfolioAPI.uploadCSV,
-    onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: ['holdings-with-metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['portfolio-overview'] });
+    onSuccess: (res) => {
+      invalidate();
       toast({
-        title: response.success ? "Success" : "Warning", 
-        description: response.message,
-        variant: response.success ? "default" : "destructive"
+        title: res.success ? "CSV imported" : "Import warning",
+        description: res.message,
+        variant: res.success ? "default" : "destructive",
       });
     },
-    onError: (error) => {
-      toast({
-        title: "Upload Failed",
-        description: `Failed to upload CSV: ${error.message}`,
-        variant: "destructive"
-      });
-    }
+    onError: (e: Error) =>
+      toast({ title: "Upload failed", description: e.message, variant: "destructive" }),
   });
 
-  const handleAddHolding = () => {
-    if (!newHolding.symbol || !newHolding.quantity || !newHolding.buy_price) {
+  const handleAdd = () => {
+    if (!form.symbol.trim() || !form.quantity || !form.buy_price) {
       toast({
-        title: "Missing Information",
-        description: "Please fill in symbol, quantity, and buy price.",
-        variant: "destructive"
+        title: "Missing fields",
+        description: "Symbol, quantity and buy price are required.",
+        variant: "destructive",
       });
       return;
     }
-
-    const holdingData: HoldingCreate = {
-      symbol: newHolding.symbol.toUpperCase(),
-      quantity: parseFloat(newHolding.quantity),
-      buy_price: parseFloat(newHolding.buy_price)
+    const data: HoldingCreate = {
+      symbol: form.symbol.trim().toUpperCase(),
+      quantity: parseFloat(form.quantity),
+      buy_price: parseFloat(form.buy_price),
     };
-
-    addHoldingMutation.mutate(holdingData);
+    addMutation.mutate(data);
   };
 
-  const handleRemoveHolding = (id: string) => {
-    deleteHoldingMutation.mutate(id);
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) csvMutation.mutate(file);
+    e.target.value = "";
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      uploadCSVMutation.mutate(file);
-    }
-    // Reset the input
-    event.target.value = '';
-  };
-
-  const totalValue = holdings.reduce((sum, holding) => sum + holding.value, 0);
-  const totalGainLoss = holdings.reduce((sum, holding) => sum + holding.gain_loss, 0);
-  const totalGainLossPercent = totalGainLoss / (totalValue - totalGainLoss) * 100;
+  const totalValue = holdings.reduce((s, h) => s + h.value, 0);
+  const totalGL = holdings.reduce((s, h) => s + h.gain_loss, 0);
+  const totalGLPct = totalValue - totalGL > 0 ? (totalGL / (totalValue - totalGL)) * 100 : 0;
+  const isGain = totalGL >= 0;
 
   return (
-    <div className="pm-container">
-      {/* Portfolio Summary */}
-      <div className="pm-summary-grid">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">${totalValue.toLocaleString()}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Gain/Loss</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${totalGainLoss >= 0 ? 'text-success' : 'text-destructive'}`}>
-              {totalGainLoss >= 0 ? '+' : ''}${totalGainLoss.toLocaleString()}
-            </div>
-            <div className={`text-sm ${totalGainLoss >= 0 ? 'text-success' : 'text-destructive'}`}>
-              {totalGainLoss >= 0 ? '+' : ''}{totalGainLossPercent.toFixed(2)}%
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Holdings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{holdings.length}</div>
-            <div className="text-sm text-muted-foreground">Active positions</div>
-          </CardContent>
-        </Card>
+    <div>
+      {/* ── Summary strip ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-3" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+        <div className="metric-cell">
+          <div className="label mb-1">Total Value</div>
+          <div className="stat-value">{fmt$(totalValue)}</div>
+        </div>
+        <div className="metric-cell">
+          <div className="label mb-1">Unrealised P&amp;L</div>
+          <div
+            className="stat-value"
+            style={{ color: `hsl(var(--${isGain ? "primary" : "destructive"}))` }}
+          >
+            {`${isGain ? "+" : "-"}${fmt$(totalGL)}`}
+          </div>
+          <div
+            className="text-[10px] mt-0.5"
+            style={{ color: `hsl(var(--${isGain ? "primary" : "destructive"}))` }}
+          >
+            {`${isGain ? "+" : ""}${totalGLPct.toFixed(2)}%`}
+          </div>
+        </div>
+        <div className="metric-cell" style={{ borderRight: 0 }}>
+          <div className="label mb-1">Positions</div>
+          <div className="stat-value">{holdings.length}</div>
+        </div>
       </div>
 
-      {/* Portfolio Management Tabs */}
-      <Tabs defaultValue="manual" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="manual">Manual Entry</TabsTrigger>
-          <TabsTrigger value="upload">CSV Upload</TabsTrigger>
-          <TabsTrigger value="holdings">Current Holdings</TabsTrigger>
-        </TabsList>
+      {/* ── Input mode toggle + form ───────────────────────────────── */}
+      <div
+        className="px-5 py-3 space-y-3"
+        style={{ borderBottom: "1px solid hsl(var(--border))" }}
+      >
+        {/* Mode toggle */}
+        <div className="flex items-center gap-1">
+          <button
+            className={`text-[10px] tracking-[0.15em] px-3 py-1 transition-colors ${
+              inputMode === "manual"
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            style={{
+              borderBottom:
+                inputMode === "manual"
+                  ? "1px solid hsl(var(--primary))"
+                  : "1px solid transparent",
+            }}
+            onClick={() => setInputMode("manual")}
+          >
+            MANUAL ENTRY
+          </button>
+          <button
+            className={`text-[10px] tracking-[0.15em] px-3 py-1 transition-colors ${
+              inputMode === "csv"
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            style={{
+              borderBottom:
+                inputMode === "csv"
+                  ? "1px solid hsl(var(--primary))"
+                  : "1px solid transparent",
+            }}
+            onClick={() => setInputMode("csv")}
+          >
+            CSV UPLOAD
+          </button>
+        </div>
 
-        <TabsContent value="manual" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Add New Holding</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="symbol">Ticker Symbol</Label>
-                  <Input
-                    id="symbol"
-                    placeholder="AAPL"
-                    value={newHolding.symbol}
-                    onChange={(e) => setNewHolding({...newHolding, symbol: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="quantity">Quantity</Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    placeholder="100"
-                    value={newHolding.quantity}
-                    onChange={(e) => setNewHolding({...newHolding, quantity: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="buy_price">Buy Price</Label>
-                  <Input
-                    id="buy_price"
-                    type="number"
-                    step="0.01"
-                    placeholder="150.00"
-                    value={newHolding.buy_price}
-                    onChange={(e) => setNewHolding({...newHolding, buy_price: e.target.value})}
-                  />
-                </div>
-              </div>
-              <Button 
-                onClick={handleAddHolding} 
-                disabled={addHoldingMutation.isPending}
-                className="w-full md:w-auto"
+        {inputMode === "manual" ? (
+          <div className="flex items-end gap-2">
+            <div className="space-y-1">
+              <div className="label">Symbol</div>
+              <input
+                className="input-terminal"
+                style={{ width: "90px" }}
+                placeholder="AAPL"
+                value={form.symbol}
+                onChange={(e) =>
+                  setForm({ ...form, symbol: e.target.value.toUpperCase() })
+                }
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="label">Quantity</div>
+              <input
+                className="input-terminal"
+                style={{ width: "90px" }}
+                type="number"
+                placeholder="100"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="label">Buy Price</div>
+              <input
+                className="input-terminal"
+                style={{ width: "110px" }}
+                type="number"
+                step="0.01"
+                placeholder="150.00"
+                value={form.buy_price}
+                onChange={(e) => setForm({ ...form, buy_price: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              />
+            </div>
+            <button
+              className="btn-terminal-primary flex items-center gap-1.5"
+              onClick={handleAdd}
+              disabled={addMutation.isPending}
+            >
+              <Plus className="w-3 h-3" />
+              {addMutation.isPending ? "ADDING..." : "ADD"}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-4">
+            <div className="text-xs text-muted-foreground">
+              CSV format: <span className="text-foreground">symbol, quantity, buy_price, buy_date</span>
+            </div>
+            <label htmlFor="csv-upload">
+              <div
+                className="btn-terminal flex items-center gap-1.5 cursor-pointer"
               >
-                <Plus className="mr-2 h-4 w-4" />
-                {addHoldingMutation.isPending ? "Adding..." : "Add Holding"}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="upload" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Upload Portfolio CSV</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="pm-upload-area">
-                <Upload className="pm-upload-icon" />
-                <div className="space-y-2">
-                  <h3 className="text-lg font-medium">Upload your portfolio</h3>
-                  <p className="pm-upload-subtitle">
-                    CSV format: symbol, quantity, buy_price, buy_date (optional)
-                  </p>
-                </div>
-                <div className="mt-4">
-                  <Label htmlFor="csv-upload" className="cursor-pointer">
-                    <Button variant="outline" asChild disabled={uploadCSVMutation.isPending}>
-                      <span>{uploadCSVMutation.isPending ? "Uploading..." : "Choose File"}</span>
-                    </Button>
-                  </Label>
-                  <Input
-                    id="csv-upload"
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    onChange={handleFileUpload}
-                    disabled={uploadCSVMutation.isPending}
-                  />
-                </div>
+                <Upload className="w-3 h-3" />
+                {csvMutation.isPending ? "UPLOADING..." : "CHOOSE FILE"}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </label>
+            <input
+              id="csv-upload"
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleFile}
+              disabled={csvMutation.isPending}
+            />
+          </div>
+        )}
+      </div>
 
-        <TabsContent value="holdings" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Current Holdings</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="pm-loading">
-                  Loading holdings...
-                </div>
-              ) : error ? (
-                <div className="pm-error">
-                  Error loading holdings: {error.message}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {holdings.length === 0 ? (
-                    <div className="pm-empty">
-                      No holdings found. Add some holdings to get started.
-                    </div>
-                  ) : (
-                    holdings.map((holding) => (
-                      <div key={holding.id} className="pm-holdings-row">
-                        <div className="pm-holdings-grid flex-1">
-                          <div>
-                            <div className="font-medium">{holding.symbol}</div>
-                            <div className="pm-label-muted">Symbol</div>
-                          </div>
-                          <div>
-                            <div className="font-medium">{holding.quantity}</div>
-                            <div className="pm-label-muted">Quantity</div>
-                          </div>
-                          <div>
-                            <div className="font-medium">${holding.buy_price.toFixed(2)}</div>
-                            <div className="pm-label-muted">Buy Price</div>
-                          </div>
-                          <div>
-                            <div className="font-medium">${holding.current_price.toFixed(2)}</div>
-                            <div className="pm-label-muted">Current</div>
-                          </div>
-                          <div>
-                            <div className="font-medium">${holding.value.toLocaleString()}</div>
-                            <div className="pm-label-muted">Value</div>
-                          </div>
-                          <div>
-                            <Badge variant={holding.gain_loss >= 0 ? "default" : "destructive"}>
-                              {holding.gain_loss >= 0 ? '+' : ''}${holding.gain_loss.toLocaleString()} 
-                              ({holding.gain_loss >= 0 ? '+' : ''}{holding.gain_loss_percent.toFixed(1)}%)
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="pm-actions">
-                          <Button variant="ghost" size="icon">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveHolding(holding.id)}
-                            disabled={deleteHoldingMutation.isPending}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* ── Holdings table ───────────────────────────────────────── */}
+      <div className="section-header">
+        <span className="label">Current Holdings</span>
+        {holdings.length > 0 && (
+          <span className="text-[10px] text-muted-foreground tracking-wider">
+            {holdings.length} position{holdings.length !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="px-5 py-8 text-center text-muted-foreground text-xs tracking-wider">
+          LOADING...
+        </div>
+      ) : holdings.length === 0 ? (
+        <div className="px-5 py-10 text-center">
+          <div className="text-muted-foreground text-xs tracking-wider mb-2">
+            NO POSITIONS
+          </div>
+          <div className="text-[10px] text-muted-foreground">
+            Use the form above to add your first position.
+          </div>
+        </div>
+      ) : (
+        <table className="w-full">
+          <thead>
+            <tr style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+              <th className="th-left">Symbol</th>
+              <th className="th">Qty</th>
+              <th className="th">Buy Price</th>
+              <th className="th">Current</th>
+              <th className="th">Value</th>
+              <th className="th">P&amp;L</th>
+              <th className="th">P&amp;L %</th>
+              <th className="th" style={{ width: "40px" }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {holdings.map((h) => {
+              const pos = h.gain_loss >= 0;
+              return (
+                <tr key={h.id} className="tr">
+                  <td className="td-left">
+                    <span
+                      className="font-semibold"
+                      style={{ color: "hsl(var(--primary))" }}
+                    >
+                      {h.symbol}
+                    </span>
+                  </td>
+                  <td className="td">{h.quantity.toLocaleString()}</td>
+                  <td className="td">${h.buy_price.toFixed(2)}</td>
+                  <td className="td">${h.current_price.toFixed(2)}</td>
+                  <td className="td">{fmt$(h.value)}</td>
+                  <td
+                    className="td"
+                    style={{
+                      color: `hsl(var(--${pos ? "primary" : "destructive"}))`,
+                    }}
+                  >
+                    {`${pos ? "+" : "-"}${fmt$(h.gain_loss)}`}
+                  </td>
+                  <td
+                    className="td"
+                    style={{
+                      color: `hsl(var(--${pos ? "primary" : "destructive"}))`,
+                    }}
+                  >
+                    {`${pos ? "+" : ""}${h.gain_loss_percent.toFixed(2)}%`}
+                  </td>
+                  <td className="td">
+                    <button
+                      className="btn-terminal-ghost p-1"
+                      onClick={() => deleteMutation.mutate(h.id)}
+                      disabled={deleteMutation.isPending}
+                      title="Remove position"
+                    >
+                      <Trash2
+                        className="w-3 h-3"
+                        style={{ color: "hsl(var(--muted-foreground))" }}
+                      />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 };

@@ -1,172 +1,214 @@
 import { useQuery } from "@tanstack/react-query";
-import "./PortfolioOverview.css";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, PieChart, Activity } from "lucide-react";
-import { portfolioAPI, type PortfolioOverview as PortfolioOverviewType } from "@/lib/api";
+import { portfolioAPI } from "@/lib/api";
+import { TrendingUp, TrendingDown } from "lucide-react";
+
+const fmt$ = (n: number) =>
+  `$${Math.abs(n).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const fmtPct = (n: number) =>
+  `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 
 export const PortfolioOverview = () => {
-  // Fetch portfolio overview data
-  const { data: portfolioData } = useQuery({
-    queryKey: ['portfolio-overview'],
+  const { data, isLoading } = useQuery({
+    queryKey: ["portfolio-overview"],
     queryFn: portfolioAPI.getOverview,
-    refetchInterval: 30000, // Refetch every 30 seconds for updated prices
+    refetchInterval: 30000,
   });
 
-  // Use default values if no data is available
-  const summary = portfolioData?.summary || {
+  const summary = data?.summary ?? {
     total_value: 0,
     total_gain_loss: 0,
     total_gain_loss_percent: 0,
-    holdings_count: 0
+    holdings_count: 0,
   };
-  const holdings = portfolioData?.holdings || [];
-  const sector_allocation = portfolioData?.sector_allocation || {};
-  
-  const portfolioValue = summary.total_value;
-  const totalGainLoss = summary.total_gain_loss;
-  const totalGainLossPercent = summary.total_gain_loss_percent;
+  const holdings = data?.holdings ?? [];
+  const sectorEntries = Object.entries(data?.sector_allocation ?? {}).sort(
+    (a, b) => b[1] - a[1]
+  );
 
-  // Calculate top holdings by value
-  const topHoldings = holdings
-    .map(holding => ({
-      symbol: holding.symbol,
-      name: `${holding.symbol} Inc.`, // Mock company name
-      allocation: holding.current_price && portfolioValue > 0 
-        ? (holding.quantity * holding.current_price / portfolioValue) * 100 
-        : 0,
-      value: holding.current_price ? holding.quantity * holding.current_price : 0,
-    }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5);
-
-  // Convert sector allocation to expected format
-  const sectorAllocation = sector_allocation 
-    ? Object.entries(sector_allocation).map(([sector, allocation], index) => ({
-        sector,
-        allocation,
-        color: `bg-chart-${(index % 5) + 1}`,
-      }))
-    : [];
+  const isGain = summary.total_gain_loss >= 0;
 
   return (
-    <div className="po-grid">
-      {/* Portfolio Value */}
-      <Card>
-        <CardHeader className="po-card-header">
-          <CardTitle className="po-title-sm">Portfolio Value</CardTitle>
-          <DollarSign className="h-4 w-4 po-muted po-icon" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">${portfolioValue.toLocaleString()}</div>
-          <div className="text-xs po-muted">
-            <span className={totalGainLossPercent >= 0 ? "text-success" : "text-destructive"}>
-              ${Math.abs(totalGainLoss).toLocaleString()} ({Math.abs(totalGainLossPercent).toFixed(2)}%)
-            </span>
-            <span className="ml-1">total return</span>
+    <div>
+      {/* ── Top metrics strip ─────────────────────────────────────── */}
+      <div className="grid grid-cols-4" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+        <div className="metric-cell">
+          <div className="label mb-2">Portfolio Value</div>
+          <div className="stat-value">
+            {isLoading ? "—" : fmt$(summary.total_value)}
           </div>
-        </CardContent>
-      </Card>
+          <div className="text-[10px] text-muted-foreground mt-1 tracking-wider">
+            {summary.holdings_count} positions
+          </div>
+        </div>
 
-      {/* Total Return */}
-      <Card>
-        <CardHeader className="po-card-header">
-          <CardTitle className="po-title-sm">Total Return</CardTitle>
-          <BarChart3 className="h-4 w-4 po-muted po-icon" />
-        </CardHeader>
-        <CardContent>
-          <div className={`text-2xl font-bold ${totalGainLoss >= 0 ? 'text-success' : 'text-destructive'}`}>
-            {totalGainLoss >= 0 ? '+' : ''}${totalGainLoss.toLocaleString()}
+        <div className="metric-cell">
+          <div className="label mb-2">Total Return</div>
+          <div
+            className="stat-value"
+            style={{ color: `hsl(var(--${isGain ? "primary" : "destructive"}))` }}
+          >
+            {isLoading
+              ? "—"
+              : `${isGain ? "+" : "-"}${fmt$(summary.total_gain_loss)}`}
           </div>
-          <div className={`text-xs ${totalGainLoss >= 0 ? 'text-success' : 'text-destructive'}`}>
-            {totalGainLoss >= 0 ? '+' : ''}{totalGainLossPercent.toFixed(2)}% total
+          <div
+            className="text-[10px] mt-1 tracking-wider"
+            style={{ color: `hsl(var(--${isGain ? "primary" : "destructive"}))` }}
+          >
+            {isLoading ? "" : fmtPct(summary.total_gain_loss_percent)}
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Sharpe Ratio */}
-      <Card>
-        <CardHeader className="po-card-header">
-          <CardTitle className="po-title-sm">Sharpe Ratio</CardTitle>
-          <Activity className="h-4 w-4 po-muted po-icon" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">
-            {holdings.length > 0 ? '1.47' : 'N/A'}
+        <div className="metric-cell">
+          <div className="label mb-2">Sectors</div>
+          <div className="stat-value">{sectorEntries.length || "—"}</div>
+          <div className="text-[10px] text-muted-foreground mt-1 tracking-wider">
+            {sectorEntries.length > 0 ? "diversified" : "no data"}
           </div>
-          <div className="text-xs text-muted-foreground">
-            Risk-adjusted return
-          </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Diversification Score */}
-      <Card>
-        <CardHeader className="po-card-header">
-          <CardTitle className="po-title-sm">Diversification</CardTitle>
-          <PieChart className="h-4 w-4 po-muted po-icon" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">
-            {holdings.length > 0 ? `${summary.holdings_count}` : '0'}
+        <div className="metric-cell" style={{ borderRight: 0 }}>
+          <div className="label mb-2">Holdings</div>
+          <div className="stat-value">{summary.holdings_count}</div>
+          <div className="text-[10px] text-muted-foreground mt-1 tracking-wider">
+            active positions
           </div>
-          <div className="text-xs text-muted-foreground">
-            Total holdings
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* Top Holdings */}
-      <Card className="col-span-full lg:col-span-2">
-        <CardHeader>
-          <CardTitle className="po-title-lg">Top Holdings</CardTitle>
-        </CardHeader>
-        <CardContent className="po-gap-4">
-          {topHoldings.map((holding) => (
-            <div key={holding.symbol} className="po-flex-between">
-              <div className="flex-1">
-                <div className="po-flex-between po-mb-1">
-                  <div className="flex items-center po-gap-2">
-                    <span className="font-medium">{holding.symbol}</span>
-                    <span className="text-sm po-muted">{holding.name}</span>
-                  </div>
-                  <div className="flex items-center po-gap-2">
-                    <span className="text-sm font-medium">${holding.value.toLocaleString()}</span>
-                  </div>
+      {/* ── Positions table ───────────────────────────────────────── */}
+      <div style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+        <div className="section-header">
+          <span className="label">Positions</span>
+        </div>
+
+        {isLoading ? (
+          <div className="px-4 py-8 text-center text-muted-foreground text-xs tracking-wider">
+            LOADING...
+          </div>
+        ) : holdings.length === 0 ? (
+          <div className="px-4 py-8 text-center text-muted-foreground text-xs tracking-wider">
+            NO POSITIONS — ADD HOLDINGS IN THE PORTFOLIO TAB
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+                <th className="th-left">Symbol</th>
+                <th className="th">Qty</th>
+                <th className="th">Buy Price</th>
+                <th className="th">Current</th>
+                <th className="th">Value</th>
+                <th className="th">P&amp;L</th>
+                <th className="th">P&amp;L %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holdings.map((h) => {
+                const current = h.current_price;
+                const value = current ? h.quantity * current : null;
+                const gainLoss = current
+                  ? (current - h.buy_price) * h.quantity
+                  : null;
+                const gainLossPct = current
+                  ? ((current - h.buy_price) / h.buy_price) * 100
+                  : null;
+                const pos = gainLoss !== null && gainLoss >= 0;
+
+                return (
+                  <tr key={h.id} className="tr">
+                    <td className="td-left">
+                      <div className="flex items-center gap-2">
+                        {gainLoss !== null ? (
+                          pos ? (
+                            <TrendingUp
+                              className="w-3 h-3"
+                              style={{ color: "hsl(var(--primary))" }}
+                            />
+                          ) : (
+                            <TrendingDown
+                              className="w-3 h-3"
+                              style={{ color: "hsl(var(--destructive))" }}
+                            />
+                          )
+                        ) : null}
+                        <span
+                          className="font-semibold"
+                          style={{ color: "hsl(var(--primary))" }}
+                        >
+                          {h.symbol}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="td">{h.quantity.toLocaleString()}</td>
+                    <td className="td">${h.buy_price.toFixed(2)}</td>
+                    <td className="td">
+                      {current ? `$${current.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="td">{value ? fmt$(value) : "—"}</td>
+                    <td
+                      className="td"
+                      style={{
+                        color: gainLoss !== null
+                          ? `hsl(var(--${pos ? "primary" : "destructive"}))`
+                          : undefined,
+                      }}
+                    >
+                      {gainLoss !== null
+                        ? `${pos ? "+" : "-"}${fmt$(gainLoss)}`
+                        : "—"}
+                    </td>
+                    <td
+                      className="td"
+                      style={{
+                        color: gainLossPct !== null
+                          ? `hsl(var(--${gainLossPct >= 0 ? "primary" : "destructive"}))`
+                          : undefined,
+                      }}
+                    >
+                      {gainLossPct !== null ? fmtPct(gainLossPct) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ── Sector allocation ────────────────────────────────────── */}
+      {sectorEntries.length > 0 && (
+        <div>
+          <div className="section-header">
+            <span className="label">Sector Allocation</span>
+          </div>
+          <div className="px-5 py-3 space-y-2.5">
+            {sectorEntries.map(([sector, alloc]) => (
+              <div key={sector} className="flex items-center gap-4">
+                <div
+                  className="text-xs text-muted-foreground tracking-wider"
+                  style={{ width: "140px", flexShrink: 0 }}
+                >
+                  {sector.toUpperCase()}
                 </div>
-                <Progress value={holding.allocation} className="po-progress-sm" />
-                <div className="text-xs po-muted po-mt-1">
-                  {holding.allocation.toFixed(1)}% of portfolio
+                <div className="flex-1 bar-track">
+                  <div className="bar-fill" style={{ width: `${alloc}%` }} />
+                </div>
+                <div
+                  className="text-xs text-right"
+                  style={{ width: "42px", color: "hsl(var(--foreground))" }}
+                >
+                  {alloc.toFixed(1)}%
                 </div>
               </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* Sector Allocation */}
-      <Card className="col-span-full lg:col-span-2">
-        <CardHeader>
-          <CardTitle className="po-title-lg">Sector Allocation</CardTitle>
-        </CardHeader>
-        <CardContent className="po-gap-3" style={{ paddingLeft: '0.75rem' }}>
-          {sectorAllocation.map((sector) => (
-            <div key={sector.sector} className="flex items-center gap-1">
-              <div className="flex items-center gap-1" style={{ width: '200px' }}>
-                <div className={`w-3 h-3 rounded-full ${sector.color}`}></div>
-                <span className="text-sm font-medium whitespace-nowrap">{sector.sector}</span>
-              </div>
-              <div className="flex items-center gap-2 flex-1">
-                <Progress value={sector.allocation} className="h-2 flex-1" />
-                <span className="text-sm po-muted" style={{ minWidth: '45px' }}>
-                  {sector.allocation.toFixed(1)}%
-                </span>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

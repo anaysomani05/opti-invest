@@ -1,44 +1,54 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sidebar } from "@/components/Sidebar/Sidebar";
+import { PortfolioOverview } from "@/components/PortfolioOverview/PortfolioOverview";
 import { PortfolioManagement } from "@/components/PortfolioManagement/PortfolioManagement";
 import { SentimentDashboard } from "@/components/SentimentDashboard/SentimentDashboard";
 import { OptimizationModule } from "@/components/OptimisationModule/Index";
-import { DashboardHeader } from "@/components/Header";
-import { PortfolioOverview } from "@/components/PortfolioOverview/PortfolioOverview";
+
+const SECTION_TITLES: Record<string, string> = {
+  overview: "PORTFOLIO OVERVIEW",
+  portfolio: "PORTFOLIO MANAGEMENT",
+  sentiment: "SENTIMENT ANALYSIS",
+  optimization: "PORTFOLIO OPTIMIZATION",
+};
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeSection, setActiveSection] = useState("overview");
 
   return (
-    <div className="min-h-screen bg-background">
-      <DashboardHeader />
-      
-      <main className="container mx-auto px-6 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-            <TabsTrigger value="sentiment">Sentiment</TabsTrigger>
-            <TabsTrigger value="optimization">Optimization</TabsTrigger>
-          </TabsList>
+    <div className="flex h-screen bg-background overflow-hidden">
+      <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
 
-          <TabsContent value="overview" className="space-y-6">
-            <PortfolioOverview />
-          </TabsContent>
+      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* Page header strip */}
+        <div
+          className="flex items-center justify-between px-5 py-2.5 flex-shrink-0"
+          style={{ borderBottom: "1px solid hsl(var(--border))" }}
+        >
+          <span className="text-[10px] tracking-[0.22em] text-muted-foreground font-medium">
+            {SECTION_TITLES[activeSection]}
+          </span>
+          <span className="text-[10px] tracking-wider text-muted-foreground">
+            {new Date().toLocaleDateString("en-US", {
+              weekday: "short",
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })}
+          </span>
+        </div>
 
-          <TabsContent value="portfolio" className="space-y-6">
-            <PortfolioManagement />
-          </TabsContent>
-
-          <TabsContent value="sentiment" className="space-y-6">
-            <SentimentDashboard />
-          </TabsContent>
-
-          <TabsContent value="optimization" className="space-y-6">
-            <OptimizationModule onNavigateToPortfolio={() => setActiveTab("portfolio")} />
-          </TabsContent>
-        </Tabs>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          {activeSection === "overview" && <PortfolioOverview />}
+          {activeSection === "portfolio" && <PortfolioManagement />}
+          {activeSection === "sentiment" && <SentimentDashboard />}
+          {activeSection === "optimization" && (
+            <OptimizationModule
+              onNavigateToPortfolio={() => setActiveSection("portfolio")}
+            />
+          )}
+        </div>
       </main>
     </div>
   );
