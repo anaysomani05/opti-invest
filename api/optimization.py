@@ -5,15 +5,40 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 from app.models import (
     OptimizationRequest, OptimizationResult, EfficientFrontierPoint,
-    PortfolioMetrics, OptimizationError, ErrorResponse
+    PortfolioMetrics, OptimizationError, ErrorResponse, AnalyzeRequest, PortfolioAnalysis
 )
 from app.services.optimization_service import optimization_service
 from app.services.portfolio_service import portfolio_service
+from app.services.portfolio_analyzer import portfolio_analyzer
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/optimization", tags=["optimization"])
+
+
+@router.post("/analyze", response_model=PortfolioAnalysis)
+async def analyze_portfolio(request: AnalyzeRequest):
+    """
+    Run end-to-end portfolio analysis diagnostics and return optimization insights.
+    """
+    try:
+        holdings = await portfolio_service.get_holdings_with_provided_prices(request.current_prices)
+        if not holdings:
+            raise HTTPException(status_code=400, detail="No holdings found in portfolio")
+        if len(holdings) < 2:
+            raise HTTPException(status_code=400, detail="Need at least 2 holdings")
+
+        result = await portfolio_analyzer.run_full_analysis(holdings, request)
+        return result
+    except ValueError as e:
+        logger.error(f"Portfolio analysis validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Portfolio analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Portfolio analysis failed: {str(e)}")
 
 @router.post("/optimize", response_model=OptimizationResult)
 async def optimize_portfolio(request: OptimizationRequest):
@@ -264,21 +289,22 @@ async def optimization_health_check():
         import pypfopt
         import pandas
         import numpy
-        from app.external.marketstack import marketstack_client
-        
-        # Test Marketstack connection
-        marketstack_healthy = marketstack_client.test_connection()
-        
+        from app.external.yfinance_client import yfinance_client
+        from app.external.openai_client import openai_client
+
+        yfinance_ok = not yfinance_client.get_historical_prices(["AAPL"], period_days=30).empty
+
         return {
             "status": "healthy",
             "dependencies": {
                 "pypfopt": True,
                 "pandas": True,
                 "numpy": True,
-                "marketstack": marketstack_healthy
+                "yfinance": yfinance_ok,
+                "openai": bool(openai_client.api_key)
             },
             "cache_size": len(optimization_service.cache),
-            "marketstack_api_key_configured": bool(marketstack_client.api_key)
+            "openai_api_key_configured": bool(openai_client.api_key)
         }
     except ImportError as e:
         return {
@@ -288,6 +314,7 @@ async def optimization_health_check():
                 "pypfopt": False,
                 "pandas": False,
                 "numpy": False,
-                "marketstack": False
+                "yfinance": False,
+                "openai": False
             }
         }

@@ -1,15 +1,28 @@
+import logging
+import sys
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-import sys
-import os
+
+# ── Logging ──────────────────────────────────────────────────────────
+if not logging.root.handlers:
+    logging.basicConfig(
+        format="%(asctime)s  %(levelname)-5s  %(name)s  %(message)s",
+        datefmt="%H:%M:%S",
+        level=logging.INFO,
+    )
+for _name in ("httpx", "httpcore", "urllib3", "filelock", "peewee", "yfinance", "praw", "prawcore"):
+    logging.getLogger(_name).setLevel(logging.ERROR)
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from api import portfolio, market, sentiment, optimization
 
 # Create FastAPI application
 app = FastAPI(
-    title="QuantIQ Backend API",
-    description="Backend API for QuantIQ Portfolio Management Platform",
+    title="OptiInvest Backend API",
+    description="Backend API for OptiInvest Portfolio Management Platform",
     version="1.0.0",
     debug=settings.debug
 )
@@ -33,7 +46,7 @@ app.include_router(optimization.router)
 async def root():
     """Root endpoint for health check"""
     return {
-        "message": "QuantIQ Backend API",
+        "message": "OptiInvest Backend API",
         "version": "1.0.0",
         "status": "running"
     }

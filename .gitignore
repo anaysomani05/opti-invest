@@ -22,8 +22,12 @@ wheels/
 
 # Virtual Environment
 venv/
+.venv/
 env/
 ENV/
+
+# Node
+node_modules/
 
 # Environment Variables
 .env

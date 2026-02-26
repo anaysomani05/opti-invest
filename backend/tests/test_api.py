@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for QuantIQ Backend APIs
+Test script for OptiInvest Backend APIs
 Tests all Portfolio and Market endpoints
 """
 
@@ -202,7 +202,7 @@ async def test_portfolio_reset():
 
 async def main():
     """Run all tests"""
-    print("Starting QuantIQ Backend API Tests")
+    print("Starting OptiInvest Backend API Tests")
     print("=" * 50)
     
     try:

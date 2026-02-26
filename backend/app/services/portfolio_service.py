@@ -5,9 +5,13 @@ from app.models import (
 )
 from app.session_store import session_store
 from app.external.finnhub import finnhub_client
+from app.external.yfinance_client import yfinance_client
 from app.config import settings
 import asyncio
+import logging
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 class PortfolioService:
     """Service for portfolio management operations"""
@@ -75,7 +79,7 @@ class PortfolioService:
         
         # Fetch only the symbols that aren't cached or are stale
         if symbols_to_fetch:
-            print(f"Fetching fresh data for: {symbols_to_fetch}")
+            logger.info("Fetching live quotes: %s", symbols_to_fetch)
             fresh_quotes = await finnhub_client.get_batch_quotes(symbols_to_fetch)
             quotes.update(fresh_quotes)
             
@@ -97,16 +101,13 @@ class PortfolioService:
         for holding in holdings:
             quote = quotes.get(holding.symbol)
             
-            # Better fallback logic - if no quote data, use a reasonable current price
+            # Deterministic fallback chain: Finnhub -> latest close -> buy price.
             if quote and quote.price > 0:
                 current_price = quote.price
             else:
-                # If API fails, use buy_price + small random variation to show some activity
-                # In production, you'd use cached data or another data source
-                import random
-                variation = random.uniform(-0.02, 0.03)  # -2% to +3% variation
-                current_price = holding.buy_price * (1 + variation)
-                print(f"Warning: No quote data for {holding.symbol}, using estimated price: ${current_price:.2f}")
+                latest_close = yfinance_client.get_latest_close(holding.symbol)
+                current_price = latest_close if latest_close and latest_close > 0 else holding.buy_price
+                logger.warning("No live quote for %s, fallback price: $%.2f", holding.symbol, current_price)
             
             # Calculate metrics
             value = holding.quantity * current_price
@@ -218,37 +219,19 @@ class PortfolioService:
     
     @staticmethod
     def _calculate_sector_allocation(holdings: List[HoldingWithMetrics]) -> Dict[str, float]:
-        """Calculate sector allocation percentages (simplified mock)"""
+        """Calculate sector allocation percentages using dynamic metadata lookup."""
         if not holdings:
             return {}
         
         total_value = sum(holding.value for holding in holdings)
-        
-        # Mock sector mapping based on common symbols
-        sector_map = {
-            'AAPL': 'Technology',
-            'MSFT': 'Technology', 
-            'GOOGL': 'Technology',
-            'GOOG': 'Technology',
-            'AMZN': 'Consumer Discretionary',
-            'TSLA': 'Consumer Discretionary',
-            'META': 'Technology',
-            'NVDA': 'Technology',
-            'NFLX': 'Communication Services',
-            'JPM': 'Financial Services',
-            'BAC': 'Financial Services',
-            'WMT': 'Consumer Defensive',
-            'PG': 'Consumer Defensive',
-            'JNJ': 'Healthcare',
-            'UNH': 'Healthcare',
-            'V': 'Financial Services',
-            'MA': 'Financial Services',
-        }
-        
+        if total_value <= 0:
+            return {}
+
         sector_values = {}
         
         for holding in holdings:
-            sector = sector_map.get(holding.symbol, 'Other')
+            info = yfinance_client.get_stock_info(holding.symbol)
+            sector = info.get("sector") or "Other"
             if sector not in sector_values:
                 sector_values[sector] = 0.0
             sector_values[sector] += holding.value

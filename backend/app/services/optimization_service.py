@@ -14,7 +14,7 @@ from app.models import (
     PortfolioMetrics, OptimizationError, HoldingWithMetrics
 )
 from app.services.portfolio_service import portfolio_service
-from app.external.marketstack import marketstack_client
+from app.external.yfinance_client import yfinance_client
 
 logger = logging.getLogger(__name__)
 
@@ -56,29 +56,8 @@ class OptimizationService:
     
     async def optimize_portfolio(self, request: OptimizationRequest) -> OptimizationResult:
         """Main optimization function"""
+        cache_key = ""
         try:
-            # Create cache key based on risk profile and holdings
-            cache_key = f"{request.risk_profile}_{request.objective}_{request.lookback_period}"
-            
-            # Check if we have a recent cached result
-            if cache_key in self._optimization_cache:
-                cache_time = self._cache_timestamp.get(cache_key)
-                if cache_time and datetime.now() - cache_time < self._cache_duration:
-                    logger.info(f"Using cached optimization result for {request.risk_profile}")
-                    return self._optimization_cache[cache_key]
-            
-            # Check if optimization is already in progress for this key
-            if cache_key in self._active_optimizations:
-                logger.info(f"Optimization already in progress for {request.risk_profile}, waiting...")
-                # Wait a bit and check cache again
-                import asyncio
-                await asyncio.sleep(1)
-                if cache_key in self._optimization_cache:
-                    return self._optimization_cache[cache_key]
-            
-            # Mark optimization as active
-            self._active_optimizations[cache_key] = True
-            
             logger.info(f"Starting portfolio optimization with risk profile: {request.risk_profile}")
             
             # Get current portfolio holdings (use provided prices if available)
@@ -99,6 +78,32 @@ class OptimizationService:
             # Extract symbols and current weights
             symbols = [h.symbol for h in holdings]
             current_weights = self._calculate_current_weights(holdings)
+
+            holdings_fingerprint = "|".join(
+                sorted(
+                    f"{h.symbol}:{h.quantity:.8f}:{h.current_price:.8f}:{h.buy_price:.8f}"
+                    for h in holdings
+                )
+            )
+            cache_key = f"{request.risk_profile}_{request.objective}_{request.lookback_period}_{holdings_fingerprint}"
+
+            # Check if we have a recent cached result
+            if cache_key in self._optimization_cache:
+                cache_time = self._cache_timestamp.get(cache_key)
+                if cache_time and datetime.now() - cache_time < self._cache_duration:
+                    logger.info(f"Using cached optimization result for {request.risk_profile}")
+                    return self._optimization_cache[cache_key]
+
+            # Check if optimization is already in progress for this key
+            if cache_key in self._active_optimizations:
+                logger.info(f"Optimization already in progress for {request.risk_profile}, waiting...")
+                import asyncio
+                await asyncio.sleep(1)
+                if cache_key in self._optimization_cache:
+                    return self._optimization_cache[cache_key]
+
+            # Mark optimization as active
+            self._active_optimizations[cache_key] = True
             
             logger.info(f"Optimizing portfolio with {len(symbols)} symbols: {symbols}")
             
@@ -108,8 +113,8 @@ class OptimizationService:
                 raise ValueError("No historical data available for optimization")
             
             # Calculate expected returns and covariance matrix
-            mu = expected_returns.mean_historical_return(historical_data)
-            S = risk_models.sample_cov(historical_data)
+            mu = expected_returns.ema_historical_return(historical_data, span=180)
+            S = risk_models.CovarianceShrinkage(historical_data).ledoit_wolf()
             
             # Apply risk profile settings
             risk_config = self._get_risk_config(request)
@@ -177,10 +182,7 @@ class OptimizationService:
         return weights
     
     async def _fetch_historical_data(self, symbols: List[str], lookback_days: int) -> pd.DataFrame:
-        """Fetch historical price data using Marketstack API"""
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=lookback_days + 30)  # Extra buffer for holidays
-        
+        """Fetch historical price data using yfinance."""
         cache_key = f"{'-'.join(sorted(symbols))}_{lookback_days}"
         
         # Check cache first
@@ -190,14 +192,13 @@ class OptimizationService:
                 logger.info("Using cached historical data")
                 return cached_data
         
-        logger.info(f"Fetching historical data from Marketstack for {len(symbols)} symbols from {start_date.date()} to {end_date.date()}")
+        logger.info(f"Fetching historical data from yfinance for {len(symbols)} symbols")
         
         try:
-            # Use Marketstack client to fetch data
-            historical_data = marketstack_client.get_historical_data(symbols, start_date, end_date)
+            historical_data = yfinance_client.get_historical_prices(symbols, period_days=lookback_days)
             
             if historical_data.empty:
-                raise ValueError("No historical data retrieved from Marketstack")
+                raise ValueError("No historical data retrieved from yfinance")
             
             # Remove symbols with insufficient data (less than 60 days)
             min_data_points = 60
@@ -220,7 +221,7 @@ class OptimizationService:
             return historical_data
             
         except Exception as e:
-            logger.error(f"Failed to fetch historical data from Marketstack: {str(e)}")
+            logger.error(f"Failed to fetch historical data from yfinance: {str(e)}")
             raise ValueError(f"Failed to fetch historical data: {str(e)}")
     
     def _get_risk_config(self, request: OptimizationRequest) -> Dict:

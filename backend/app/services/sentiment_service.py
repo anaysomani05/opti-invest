@@ -1,9 +1,11 @@
 import asyncio
 import time
 import random
+import warnings
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from newsapi import NewsApiClient
+warnings.filterwarnings("ignore", message=".*asynchronous environment.*")
 import praw
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import logging
@@ -11,8 +13,6 @@ from app.config import settings
 from app.models import SentimentData, AggregatedSentiment, SourceBreakdown, SentimentAlert
 from app.external.finnhub import finnhub_client
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class SentimentService:
@@ -28,8 +28,8 @@ class SentimentService:
         self.news_client = self._init_news_client()
         self.reddit_client = self._init_reddit_client()
         
-        # Default stocks to track
-        self.tracked_stocks = ["AAPL", "MSFT", "GOOGL", "TSLA", "AMZN", "NVDA", "META", "NFLX", "AMD", "UBER"]
+        # Tracked stocks – populated dynamically from user portfolio
+        self.tracked_stocks: List[str] = []
     
     def _init_news_client(self) -> Optional[NewsApiClient]:
         """Initialize NewsAPI client if API key is available"""
@@ -48,7 +48,7 @@ class SentimentService:
         try:
             client_id = getattr(settings, 'reddit_client_id', None)
             client_secret = getattr(settings, 'reddit_client_secret', None)
-            user_agent = getattr(settings, 'reddit_user_agent', 'QuantSenseForge/1.0')
+            user_agent = getattr(settings, 'reddit_user_agent', 'OptiInvest/1.0')
             
             if client_id and client_secret:
                 return praw.Reddit(
@@ -295,20 +295,23 @@ class SentimentService:
         return results
     
     async def get_overview(self) -> List[AggregatedSentiment]:
-        """Get sentiment overview for tracked stocks"""
-        return await self.get_batch_sentiments(self.tracked_stocks)
+        """Get sentiment overview for portfolio holdings (dynamic)"""
+        from app.session_store import session_store
+        holdings = session_store.get_all_holdings()
+        symbols = list({h.symbol for h in holdings}) if holdings else []
+        if not symbols:
+            return []
+        self.tracked_stocks = symbols
+        return await self.get_batch_sentiments(symbols)
     
     async def get_alerts(self) -> List[SentimentAlert]:
         """Get current sentiment alerts from cached data only - NO API CALLS"""
         alerts = []
 
-        # CRITICAL: Only work with existing cached data
-        # DO NOT fetch any new data to avoid triggering mass API calls
-        for symbol in self.tracked_stocks:
-            if symbol in self.cache:
-                sentiment = self.cache[symbol]
-                stock_alerts = self._generate_alerts(sentiment)
-                alerts.extend(stock_alerts)
+        # Use whatever symbols are currently cached
+        for symbol, sentiment in self.cache.items():
+            stock_alerts = self._generate_alerts(sentiment)
+            alerts.extend(stock_alerts)
 
         return alerts
 

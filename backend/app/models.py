@@ -149,3 +149,80 @@ class OptimizationError(BaseModel):
     error_type: str = Field(..., description="Type of optimization error")
     message: str = Field(..., description="Error message")
     suggestions: List[str] = Field(default=[], description="Suggestions to fix the error")
+
+
+class AnalyzeRequest(BaseModel):
+    risk_profile: str = Field(default="moderate", description="Risk profile: conservative|moderate|aggressive")
+    current_prices: Dict[str, float] = Field(default_factory=dict, description="Current prices from frontend")
+    lookback_period: int = Field(default=365, ge=90, le=1260, description="Days of historical data")
+
+
+class HealthSubScores(BaseModel):
+    diversification: float
+    correlation: float
+    concentration: float
+    quality: float
+
+
+class SectorGap(BaseModel):
+    sector: str
+    current_weight: float
+    benchmark_weight: float
+    gap: float
+    severity: str
+
+
+class HighCorrelationPair(BaseModel):
+    stock_a: str
+    stock_b: str
+    correlation: float
+
+
+class RiskContribution(BaseModel):
+    symbol: str
+    weight: float
+    variance_contribution: float
+    marginal_sharpe_impact: float
+
+
+class RemovalCandidate(BaseModel):
+    symbol: str
+    removal_score: float
+    reasons: List[str] = Field(default_factory=list)
+    explanation: str = ""
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AdditionCandidate(BaseModel):
+    symbol: str
+    name: str
+    sector: str
+    exchange: str = ""
+    reasons: List[str] = Field(default_factory=list)
+    explanation: str = ""
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    fills_sector_gap: bool = False
+
+
+class SectorAnalysisSummary(BaseModel):
+    current: Dict[str, float] = Field(default_factory=dict)
+    benchmark: Dict[str, float] = Field(default_factory=dict)
+    gaps: List[SectorGap] = Field(default_factory=list)
+    overweight: List[str] = Field(default_factory=list)
+    underweight: List[str] = Field(default_factory=list)
+
+
+class PortfolioAnalysis(BaseModel):
+    health_score: int
+    health_grade: str
+    health_sub_scores: HealthSubScores
+    diagnosis: str
+    sector_summary: SectorAnalysisSummary
+    high_correlation_pairs: List[HighCorrelationPair] = Field(default_factory=list)
+    correlation_matrix: Dict[str, Dict[str, float]] = Field(default_factory=dict)
+    risk_contributions: List[RiskContribution] = Field(default_factory=list)
+    removal_candidates: List[RemovalCandidate] = Field(default_factory=list)
+    addition_candidates: List[AdditionCandidate] = Field(default_factory=list)
+    optimized_result: Optional[OptimizationResult] = None
+    lookback_period: int
+    generated_at: datetime = Field(default_factory=datetime.now)

@@ -44,7 +44,7 @@ class FinnhubClient:
         
         # Record this call
         self.calls_made.append(current_time)
-        logger.info(f"API calls in last minute: {len(self.calls_made)}/{self.max_calls_per_minute}")
+        logger.debug("API calls in last minute: %d/%d", len(self.calls_made), self.max_calls_per_minute)
     
     async def get_quote(self, symbol: str) -> Optional[MarketQuote]:
         """Get real-time quote for a symbol"""
@@ -88,7 +88,7 @@ class FinnhubClient:
         """Get quotes for multiple symbols with intelligent rate limiting"""
         quotes = {}
         
-        logger.info(f"Fetching quotes for {len(symbols)} symbols with rate limiting...")
+        logger.debug("Fetching quotes for %d symbols", len(symbols))
         
         for symbol in symbols:
             quote = await self.get_quote(symbol)
