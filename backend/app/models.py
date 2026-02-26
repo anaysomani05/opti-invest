@@ -151,6 +151,70 @@ class OptimizationError(BaseModel):
     suggestions: List[str] = Field(default=[], description="Suggestions to fix the error")
 
 
+# ── Agent Optimization Models ──────────────────────────────────────────────────
+
+class StockSentiment(BaseModel):
+    symbol: str
+    score: float = Field(..., ge=-1, le=1, description="Sentiment score -1 (bearish) to +1 (bullish)")
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    headline_count: int = 0
+    catalysts: List[str] = Field(default_factory=list)
+    summary: str = ""
+
+class SentimentAgentOutput(BaseModel):
+    sentiments: List[StockSentiment] = Field(default_factory=list)
+    method: str = "gpt"
+
+class FundamentalSignal(BaseModel):
+    symbol: str
+    score: float = Field(..., ge=0, le=1, description="Fundamental quality score 0-1")
+    valuation: str = Field(default="fair", description="undervalued | fair | overvalued")
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""
+
+class FundamentalAgentOutput(BaseModel):
+    signals: List[FundamentalSignal] = Field(default_factory=list)
+
+class StressTest(BaseModel):
+    scenario: str
+    portfolio_impact: float
+    worst_hit: str = ""
+    best_performer: str = ""
+
+class RiskAgentOutput(BaseModel):
+    cvar_95: float = 0.0
+    cvar_99: float = 0.0
+    max_drawdown: float = 0.0
+    hhi: float = 0.0
+    stress_tests: List[StressTest] = Field(default_factory=list)
+    correlated_clusters: List[List[str]] = Field(default_factory=list)
+    hedging_suggestions: List[str] = Field(default_factory=list)
+    per_stock_risk: Dict[str, float] = Field(default_factory=dict)
+
+class BLView(BaseModel):
+    symbol: str
+    expected_excess_return: float
+    confidence: float
+    sources: List[str] = Field(default_factory=list)
+
+class BLOptimizationResult(BaseModel):
+    optimal_weights: Dict[str, float] = Field(default_factory=dict)
+    expected_return: float = 0.0
+    volatility: float = 0.0
+    sharpe_ratio: float = 0.0
+    views: List[BLView] = Field(default_factory=list)
+    current_weights: Dict[str, float] = Field(default_factory=dict)
+    method: str = "black_litterman"
+
+class AgentOptimizationResponse(BaseModel):
+    sentiment: Optional[Dict[str, Any]] = None
+    fundamental: Optional[Dict[str, Any]] = None
+    risk: Optional[Dict[str, Any]] = None
+    bl_result: Optional[Dict[str, Any]] = None
+    report: str = ""
+    errors: List[str] = Field(default_factory=list)
+
+
 class AnalyzeRequest(BaseModel):
     risk_profile: str = Field(default="moderate", description="Risk profile: conservative|moderate|aggressive")
     current_prices: Dict[str, float] = Field(default_factory=dict, description="Current prices from frontend")
@@ -226,3 +290,41 @@ class PortfolioAnalysis(BaseModel):
     optimized_result: Optional[OptimizationResult] = None
     lookback_period: int
     generated_at: datetime = Field(default_factory=datetime.now)
+
+
+# ── Intelligence Models ────────────────────────────────────────────────────
+
+class SignalFactor(BaseModel):
+    source: str
+    signal: str
+    score: float
+    weight: float
+
+class StockSignal(BaseModel):
+    symbol: str
+    action: str = Field(..., description="BUY | HOLD | SELL")
+    confidence: float = Field(..., ge=0, le=1)
+    composite_score: float = 0.5
+    reasoning: str = ""
+    factors: List[SignalFactor] = Field(default_factory=list)
+
+class DiscoverySuggestion(BaseModel):
+    symbol: str
+    name: str
+    sector: str
+    score: float
+    reason: str
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+
+class NewsItem(BaseModel):
+    headline: str
+    symbol: str
+    sentiment_score: float
+    sentiment_label: str
+    source: str = "news"
+
+class RiskAlert(BaseModel):
+    severity: str = Field(..., description="high | medium | low")
+    category: str
+    message: str
+    affected_symbols: List[str] = Field(default_factory=list)

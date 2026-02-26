@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, PieChart } from "lucide-react";
+import { AlertTriangle, Bot, BarChart3, Loader2, PieChart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   optimizationAPI,
@@ -15,15 +15,19 @@ import {
   type RiskContribution,
   type SectorGap,
 } from "@/lib/api";
+import { AgentOptimizationModule } from "./AgentOptimizationModule";
 
 interface Props {
   onNavigateToPortfolio?: () => void;
 }
 
+type OptMode = "classic_ef" | "bl_enhanced";
+
 const riskProfiles = ["conservative", "moderate", "aggressive"] as const;
 
 export const OptimizationModule = ({ onNavigateToPortfolio }: Props) => {
   const { toast } = useToast();
+  const [mode, setMode] = useState<OptMode>("bl_enhanced");
   const [riskProfile, setRiskProfile] = useState<(typeof riskProfiles)[number]>("moderate");
 
   const { data: holdings = [], isLoading: holdingsLoading, error: holdingsError } =
@@ -94,30 +98,62 @@ export const OptimizationModule = ({ onNavigateToPortfolio }: Props) => {
   const analysis = analyzeMutation.data;
 
   return (
-    <div className="space-y-6 p-5">
-      <section className="p-4 border rounded-sm" style={{ borderColor: "hsl(var(--border))" }}>
-        <div className="label mb-3">Control Strip</div>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {riskProfiles.map((p) => (
-            <button
-              key={p}
-              onClick={() => setRiskProfile(p)}
-              className="px-3 py-2 text-[11px] tracking-wider border"
-              style={{
-                borderColor: riskProfile === p ? "hsl(var(--primary))" : "hsl(var(--border))",
-                background: riskProfile === p ? "hsl(var(--primary) / 0.08)" : "transparent",
-              }}
-            >
-              {p.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        <button className="btn-terminal-primary" onClick={runAnalysis} disabled={analyzeMutation.isPending}>
-          {analyzeMutation.isPending ? "ANALYSING..." : "ANALYSE PORTFOLIO"}
+    <div>
+      {/* Mode toggle */}
+      <div className="flex items-center gap-1 px-5 pt-5 pb-0">
+        <button
+          onClick={() => setMode("bl_enhanced")}
+          className="flex items-center gap-1.5 px-3 py-2 text-[11px] tracking-wider border"
+          style={{
+            borderColor: mode === "bl_enhanced" ? "hsl(var(--primary))" : "hsl(var(--border))",
+            background: mode === "bl_enhanced" ? "hsl(var(--primary) / 0.08)" : "transparent",
+            color: mode === "bl_enhanced" ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+          }}
+        >
+          <Bot className="w-3.5 h-3.5" /> BL-ENHANCED
         </button>
-      </section>
+        <button
+          onClick={() => setMode("classic_ef")}
+          className="flex items-center gap-1.5 px-3 py-2 text-[11px] tracking-wider border"
+          style={{
+            borderColor: mode === "classic_ef" ? "hsl(var(--primary))" : "hsl(var(--border))",
+            background: mode === "classic_ef" ? "hsl(var(--primary) / 0.08)" : "transparent",
+            color: mode === "classic_ef" ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
+          }}
+        >
+          <BarChart3 className="w-3.5 h-3.5" /> CLASSIC EF
+        </button>
+      </div>
 
-      {analysis && <Dashboard analysis={analysis} />}
+      {mode === "bl_enhanced" ? (
+        <AgentOptimizationModule onNavigateToPortfolio={onNavigateToPortfolio} />
+      ) : (
+        <div className="space-y-6 p-5">
+          <section className="p-4 border rounded-sm" style={{ borderColor: "hsl(var(--border))" }}>
+            <div className="label mb-3">Control Strip</div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {riskProfiles.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setRiskProfile(p)}
+                  className="px-3 py-2 text-[11px] tracking-wider border"
+                  style={{
+                    borderColor: riskProfile === p ? "hsl(var(--primary))" : "hsl(var(--border))",
+                    background: riskProfile === p ? "hsl(var(--primary) / 0.08)" : "transparent",
+                  }}
+                >
+                  {p.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <button className="btn-terminal-primary" onClick={runAnalysis} disabled={analyzeMutation.isPending}>
+              {analyzeMutation.isPending ? "ANALYSING..." : "ANALYSE PORTFOLIO"}
+            </button>
+          </section>
+
+          {analysis && <Dashboard analysis={analysis} />}
+        </div>
+      )}
     </div>
   );
 };

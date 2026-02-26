@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     sentiment_cache_timeout: int = 1800
     analysis_cache_minutes: int = 15
 
+    # Agent optimization settings
+    agent_timeout: int = 30
+    bl_risk_aversion: float = 2.5
+    bl_risk_free_rate: float = 0.02
+
     # Analysis and scoring configuration
     benchmark_symbol: str = "SPY"
     sector_gap_medium: float = 0.05

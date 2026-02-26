@@ -4,12 +4,14 @@ import { PortfolioOverview } from "@/components/PortfolioOverview/PortfolioOverv
 import { PortfolioManagement } from "@/components/PortfolioManagement/PortfolioManagement";
 import { SentimentDashboard } from "@/components/SentimentDashboard/SentimentDashboard";
 import { OptimizationModule } from "@/components/OptimisationModule/Index";
+import { IntelligenceDashboard } from "@/components/Intelligence/IntelligenceDashboard";
 
 const SECTION_TITLES: Record<string, string> = {
   overview: "PORTFOLIO OVERVIEW",
   portfolio: "PORTFOLIO MANAGEMENT",
   sentiment: "SENTIMENT ANALYSIS",
   optimization: "PORTFOLIO OPTIMIZATION",
+  intelligence: "AI SIGNALS & INTELLIGENCE",
 };
 
 const Index = () => {
@@ -45,6 +47,11 @@ const Index = () => {
           {activeSection === "sentiment" && <SentimentDashboard />}
           {activeSection === "optimization" && (
             <OptimizationModule
+              onNavigateToPortfolio={() => setActiveSection("portfolio")}
+            />
+          )}
+          {activeSection === "intelligence" && (
+            <IntelligenceDashboard
               onNavigateToPortfolio={() => setActiveSection("portfolio")}
             />
           )}

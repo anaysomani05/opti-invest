@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Briefcase, Activity, Sliders } from "lucide-react";
+import { LayoutDashboard, Briefcase, Activity, Sliders, Radio } from "lucide-react";
 
 interface NavItem {
   id: string;
@@ -12,6 +12,7 @@ const navItems: NavItem[] = [
   { id: "portfolio", label: "PORTFOLIO", icon: Briefcase },
   { id: "sentiment", label: "SENTIMENT", icon: Activity },
   { id: "optimization", label: "OPTIMIZE", icon: Sliders },
+  { id: "intelligence", label: "SIGNALS", icon: Radio },
 ];
 
 interface SidebarProps {
