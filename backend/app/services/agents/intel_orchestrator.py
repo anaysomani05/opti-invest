@@ -199,9 +199,11 @@ class IntelligenceOrchestrator:
         for s in sentiment_data.get("sentiments", []):
             score = s.get("score", 0)
             label = "BULLISH" if score > 0.2 else ("BEARISH" if score < -0.2 else "NEUTRAL")
+            url_map = s.get("headline_urls", {})
             for headline in s.get("catalysts", []):
                 items.append({
                     "headline": headline,
+                    "url": url_map.get(headline, ""),
                     "symbol": s["symbol"],
                     "sentiment_score": round(score, 2),
                     "sentiment_label": label,

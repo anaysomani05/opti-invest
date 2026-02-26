@@ -41,11 +41,24 @@ const SentimentCard = ({ item }: { item: StockSentiment }) => {
       </div>
       {item.catalysts.length > 0 && (
         <div className="space-y-0.5 mb-1.5">
-          {item.catalysts.slice(0, 3).map((c, i) => (
-            <div key={i} className="text-[10px] text-muted-foreground truncate">
-              → {c}
-            </div>
-          ))}
+          {item.catalysts.slice(0, 3).map((c, i) => {
+            const url = item.headline_urls?.[c];
+            return url ? (
+              <a
+                key={i}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-[10px] text-muted-foreground truncate hover:text-foreground transition-colors underline decoration-border hover:decoration-foreground"
+              >
+                → {c}
+              </a>
+            ) : (
+              <div key={i} className="text-[10px] text-muted-foreground truncate">
+                → {c}
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="text-[11px] italic text-muted-foreground">{item.summary}</div>

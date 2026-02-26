@@ -28,38 +28,46 @@ except Exception:
     _vader = None
 
 
-def _fetch_google_news(symbol: str, max_items: int = 10) -> List[str]:
+def _fetch_google_news(symbol: str, max_items: int = 10) -> List[Dict[str, str]]:
     if not feedparser:
         return []
     try:
         url = f"https://news.google.com/rss/search?q={symbol}+stock&hl=en-US&gl=US&ceid=US:en"
         feed = feedparser.parse(url)
-        return [entry.title for entry in feed.entries[:max_items] if hasattr(entry, "title")]
+        results = []
+        for entry in feed.entries[:max_items]:
+            if hasattr(entry, "title"):
+                results.append({
+                    "title": entry.title,
+                    "url": getattr(entry, "link", ""),
+                })
+        return results
     except Exception as exc:
         logger.warning("Google News RSS failed for %s: %s", symbol, exc)
         return []
 
 
-def _fetch_yfinance_news(symbol: str, max_items: int = 10) -> List[str]:
+def _fetch_yfinance_news(symbol: str, max_items: int = 10) -> List[Dict[str, str]]:
     try:
         import yfinance as yf
         ticker = yf.Ticker(symbol)
         news = ticker.news or []
-        headlines = []
+        results = []
         for item in news[:max_items]:
             title = item.get("title") or item.get("content", {}).get("title", "")
+            link = item.get("link") or item.get("content", {}).get("canonicalUrl", {}).get("url", "")
             if title:
-                headlines.append(title)
-        return headlines
+                results.append({"title": title, "url": link})
+        return results
     except Exception as exc:
         logger.warning("yfinance news failed for %s: %s", symbol, exc)
         return []
 
 
-def _vader_sentiment(headlines: List[str]) -> float:
-    if not _vader or not headlines:
+def _vader_sentiment(texts: List[str]) -> float:
+    if not _vader or not texts:
         return 0.0
-    scores = [_vader.polarity_scores(h)["compound"] for h in headlines]
+    scores = [_vader.polarity_scores(t)["compound"] for t in texts]
     return sum(scores) / len(scores)
 
 
@@ -78,44 +86,49 @@ class SentimentAgent(BaseAgent):
         client = OpenAI(api_key=settings.openai_api_key) if use_gpt else None
 
         for symbol in symbols:
-            headlines = _fetch_google_news(symbol) + _fetch_yfinance_news(symbol)
-            # Deduplicate
+            raw_items = _fetch_google_news(symbol) + _fetch_yfinance_news(symbol)
+            # Deduplicate by title
             seen = set()
-            unique = []
-            for h in headlines:
-                if h not in seen:
-                    seen.add(h)
-                    unique.append(h)
-            headlines = unique[:20]
+            unique: List[Dict[str, str]] = []
+            for item in raw_items:
+                if item["title"] not in seen:
+                    seen.add(item["title"])
+                    unique.append(item)
+            unique = unique[:20]
+            headline_texts = [item["title"] for item in unique]
+            url_map = {item["title"]: item["url"] for item in unique if item.get("url")}
 
-            if not headlines:
+            if not headline_texts:
                 sentiments.append({
                     "symbol": symbol,
                     "score": 0.0,
                     "confidence": 0.1,
                     "headline_count": 0,
                     "catalysts": [],
+                    "headline_urls": {},
                     "summary": "No recent news found.",
                 })
                 continue
 
             if client:
                 try:
-                    result = self._gpt_analyze(client, symbol, headlines)
+                    result = self._gpt_analyze(client, symbol, headline_texts)
+                    result["headline_urls"] = url_map
                     sentiments.append(result)
                     continue
                 except Exception as exc:
                     logger.warning("GPT sentiment failed for %s, falling back to VADER: %s", symbol, exc)
 
             # VADER fallback
-            score = _vader_sentiment(headlines)
+            score = _vader_sentiment(headline_texts)
             sentiments.append({
                 "symbol": symbol,
                 "score": round(score, 3),
-                "confidence": min(0.6, len(headlines) / 20),
-                "headline_count": len(headlines),
-                "catalysts": headlines[:3],
-                "summary": f"VADER analysis of {len(headlines)} headlines yields {score:.2f} sentiment.",
+                "confidence": min(0.6, len(headline_texts) / 20),
+                "headline_count": len(headline_texts),
+                "catalysts": headline_texts[:3],
+                "headline_urls": url_map,
+                "summary": f"VADER analysis of {len(headline_texts)} headlines yields {score:.2f} sentiment.",
             })
 
         return {

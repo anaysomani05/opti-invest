@@ -5,11 +5,13 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 from app.models import (
     OptimizationRequest, OptimizationResult, EfficientFrontierPoint,
-    PortfolioMetrics, OptimizationError, ErrorResponse, AnalyzeRequest, PortfolioAnalysis
+    PortfolioMetrics, OptimizationError, ErrorResponse, AnalyzeRequest, PortfolioAnalysis,
+    StrategyConfig, StrategyInfo, StrategyOptimizationResult,
 )
 from app.services.optimization_service import optimization_service
 from app.services.portfolio_service import portfolio_service
 from app.services.portfolio_analyzer import portfolio_analyzer
+from app.services.optimization.registry import get_all_strategies_info, run_strategy, STRATEGIES
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,31 @@ async def analyze_portfolio(request: AnalyzeRequest):
     except Exception as e:
         logger.error(f"Portfolio analysis failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Portfolio analysis failed: {str(e)}")
+
+@router.get("/strategies", response_model=List[StrategyInfo])
+async def list_strategies():
+    """Return metadata for all available optimization strategies."""
+    return get_all_strategies_info()
+
+
+@router.post("/strategy-optimize", response_model=StrategyOptimizationResult)
+async def strategy_optimize(config: StrategyConfig):
+    """Run a specific optimization strategy on the current portfolio."""
+    try:
+        if config.strategy not in STRATEGIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown strategy '{config.strategy}'. Available: {list(STRATEGIES.keys())}",
+            )
+        result = await run_strategy(config)
+        return result
+    except ValueError as e:
+        logger.error(f"Strategy optimization validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Strategy optimization failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Strategy optimization failed: {str(e)}")
+
 
 @router.post("/optimize", response_model=OptimizationResult)
 async def optimize_portfolio(request: OptimizationRequest):

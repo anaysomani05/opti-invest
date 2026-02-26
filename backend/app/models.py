@@ -159,6 +159,7 @@ class StockSentiment(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
     headline_count: int = 0
     catalysts: List[str] = Field(default_factory=list)
+    headline_urls: Dict[str, str] = Field(default_factory=dict, description="Map of headline text to URL")
     summary: str = ""
 
 class SentimentAgentOutput(BaseModel):
@@ -318,6 +319,7 @@ class DiscoverySuggestion(BaseModel):
 
 class NewsItem(BaseModel):
     headline: str
+    url: str = ""
     symbol: str
     sentiment_score: float
     sentiment_label: str
@@ -328,3 +330,39 @@ class RiskAlert(BaseModel):
     category: str
     message: str
     affected_symbols: List[str] = Field(default_factory=list)
+
+
+# ── Strategy Optimization Models ───────────────────────────────────────────
+
+class StrategyConfig(BaseModel):
+    strategy: str = Field(..., description="mean_variance | min_variance | risk_parity | black_litterman | hrp")
+    lookback_period: int = Field(default=252, ge=60, le=1260)
+    risk_free_rate: float = Field(default=0.04)
+    min_weight: float = Field(default=0.01, ge=0, le=0.5)
+    max_weight: float = Field(default=0.40, ge=0.1, le=1.0)
+    current_prices: Optional[Dict[str, float]] = None
+    risk_aversion: float = Field(default=2.5, description="BL risk aversion parameter")
+    linkage_method: str = Field(default="single", description="HRP linkage method")
+
+class StrategyInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    best_for: str
+    uses_expected_returns: bool
+    supports_weight_bounds: bool
+
+class StrategyOptimizationResult(BaseModel):
+    strategy: str
+    strategy_name: str
+    optimal_weights: Dict[str, float]
+    expected_return: float
+    volatility: float
+    sharpe_ratio: float
+    max_drawdown: Optional[float] = None
+    cvar: Optional[float] = None
+    efficient_frontier: List[EfficientFrontierPoint] = []
+    current_weights: Dict[str, float]
+    rebalancing_trades: Dict[str, float]
+    data_period: str
+    strategy_metadata: Dict[str, Any] = {}

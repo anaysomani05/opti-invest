@@ -42,9 +42,20 @@ export const NewsFeed = ({ items }: Props) => {
                 {item.sentiment_label} {item.sentiment_score > 0 ? "+" : ""}
                 {item.sentiment_score.toFixed(1)}
               </span>
-              <span className="flex-1 text-muted-foreground leading-relaxed">
-                "{item.headline}"
-              </span>
+              {item.url ? (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 text-muted-foreground leading-relaxed hover:text-foreground transition-colors underline decoration-border hover:decoration-foreground"
+                >
+                  "{item.headline}"
+                </a>
+              ) : (
+                <span className="flex-1 text-muted-foreground leading-relaxed">
+                  "{item.headline}"
+                </span>
+              )}
               <span className="flex-shrink-0 text-[10px] font-medium">{item.symbol}</span>
             </div>
           );

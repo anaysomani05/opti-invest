@@ -23,8 +23,10 @@ class RiskAgent(BaseAgent):
         market_caps: Dict[str, float],
         current_weights: Dict[str, float],
     ) -> Dict[str, Any]:
-        returns = historical_prices.pct_change().dropna()
-        if returns.empty or len(returns) < 30:
+        returns = historical_prices.pct_change().dropna(how="all")
+        # Forward-fill then drop remaining NaNs to handle stocks with shorter history
+        returns = returns.ffill().dropna()
+        if returns.empty or len(returns) < 10:
             return self._empty_result()
 
         weights_arr = np.array([current_weights.get(s, 1.0 / len(symbols)) for s in returns.columns])

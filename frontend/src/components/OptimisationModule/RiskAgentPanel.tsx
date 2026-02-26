@@ -5,6 +5,9 @@ interface Props {
 }
 
 export const RiskAgentPanel = ({ data }: Props) => {
+  const isInsufficient =
+    data.cvar_95 === 0 && data.cvar_99 === 0 && data.max_drawdown === 0 && data.hhi === 0;
+
   return (
     <section
       className="p-4 border rounded-sm animate-in fade-in slide-in-from-bottom-2 duration-300"
@@ -12,12 +15,21 @@ export const RiskAgentPanel = ({ data }: Props) => {
     >
       <div className="label mb-3">Risk Analysis</div>
 
+      {isInsufficient && (
+        <div
+          className="text-[11px] px-3 py-2 mb-4 border rounded-sm"
+          style={{ borderColor: "hsl(var(--warning) / 0.5)", color: "hsl(var(--warning))" }}
+        >
+          Insufficient historical data to compute risk metrics. Add holdings with longer price history.
+        </div>
+      )}
+
       {/* Metrics strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <MetricBox label="CVaR 95%" value={`${((data.cvar_95 ?? 0) * 100).toFixed(1)}%`} warn={(data.cvar_95 ?? 0) < -0.2} />
-        <MetricBox label="CVaR 99%" value={`${((data.cvar_99 ?? 0) * 100).toFixed(1)}%`} warn={(data.cvar_99 ?? 0) < -0.3} />
-        <MetricBox label="Max Drawdown" value={`${((data.max_drawdown ?? 0) * 100).toFixed(1)}%`} warn={(data.max_drawdown ?? 0) < -0.25} />
-        <MetricBox label="HHI (Conc.)" value={(data.hhi ?? 0).toFixed(3)} warn={(data.hhi ?? 0) > 0.25} />
+        <MetricBox label="CVaR 95%" value={isInsufficient ? "—" : `${((data.cvar_95 ?? 0) * 100).toFixed(1)}%`} warn={!isInsufficient && (data.cvar_95 ?? 0) < -0.2} />
+        <MetricBox label="CVaR 99%" value={isInsufficient ? "—" : `${((data.cvar_99 ?? 0) * 100).toFixed(1)}%`} warn={!isInsufficient && (data.cvar_99 ?? 0) < -0.3} />
+        <MetricBox label="Max Drawdown" value={isInsufficient ? "—" : `${((data.max_drawdown ?? 0) * 100).toFixed(1)}%`} warn={!isInsufficient && (data.max_drawdown ?? 0) < -0.25} />
+        <MetricBox label="HHI (Conc.)" value={isInsufficient ? "—" : (data.hhi ?? 0).toFixed(3)} warn={!isInsufficient && (data.hhi ?? 0) > 0.25} />
       </div>
 
       {/* Stress tests */}
