@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Sidebar } from "@/components/Sidebar/Sidebar";
+import { MarketTicker } from "@/components/MarketTicker/MarketTicker";
 import { PortfolioOverview } from "@/components/PortfolioOverview/PortfolioOverview";
 import { PortfolioManagement } from "@/components/PortfolioManagement/PortfolioManagement";
 import { OnboardingScreen } from "@/components/Onboarding/OnboardingScreen";
 import { AdvisorModule } from "@/components/Advisor/AdvisorModule";
+import { NewsFeed } from "@/components/NewsFeed/NewsFeed";
 import { profileAPI } from "@/lib/api";
 
 const SECTION_TITLES: Record<string, string> = {
@@ -41,6 +43,7 @@ const Index = () => {
       <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
 
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <MarketTicker />
         {/* Page header strip */}
         <div
           className="flex items-center justify-between px-5 py-2.5 flex-shrink-0"
@@ -60,13 +63,23 @@ const Index = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {activeSection === "overview" && <PortfolioOverview />}
-          {activeSection === "portfolio" && <PortfolioManagement />}
-          {activeSection === "advisor" && (
-            <AdvisorModule
-              onEditProfile={() => { setProfileExists(false); }}
-            />
+        <div className="flex-1 overflow-hidden flex">
+          <div className="flex-1 overflow-y-auto min-w-0">
+            {activeSection === "overview" && <PortfolioOverview />}
+            {activeSection === "portfolio" && <PortfolioManagement />}
+            {activeSection === "advisor" && (
+              <AdvisorModule
+                onEditProfile={() => { setProfileExists(false); }}
+              />
+            )}
+          </div>
+          {activeSection === "overview" && (
+            <div
+              className="w-[340px] flex-shrink-0 overflow-hidden flex flex-col"
+              style={{ borderLeft: "1px solid hsl(var(--border))" }}
+            >
+              <NewsFeed />
+            </div>
           )}
         </div>
       </main>
