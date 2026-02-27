@@ -1,42 +1,26 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Sidebar } from "@/components/Sidebar/Sidebar";
 import { MarketTicker } from "@/components/MarketTicker/MarketTicker";
-import { PortfolioOverview } from "@/components/PortfolioOverview/PortfolioOverview";
 import { PortfolioManagement } from "@/components/PortfolioManagement/PortfolioManagement";
-import { OnboardingScreen } from "@/components/Onboarding/OnboardingScreen";
-import { AdvisorModule } from "@/components/Advisor/AdvisorModule";
+import { BacktestConfig } from "@/components/Backtest/BacktestConfig";
+import { BacktestResults } from "@/components/Results/BacktestResults";
 import { NewsFeed } from "@/components/NewsFeed/NewsFeed";
-import { profileAPI } from "@/lib/api";
+import type { BacktestResult } from "@/lib/api";
 
 const SECTION_TITLES: Record<string, string> = {
-  overview: "PORTFOLIO OVERVIEW",
   portfolio: "PORTFOLIO MANAGEMENT",
-  advisor: "AI PORTFOLIO ADVISOR",
+  backtest: "STRATEGY BACKTESTER",
+  results: "BACKTEST RESULTS",
 };
 
 const Index = () => {
-  const [activeSection, setActiveSection] = useState("overview");
-  const [profileExists, setProfileExists] = useState<boolean | null>(null);
+  const [activeSection, setActiveSection] = useState("portfolio");
+  const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([]);
 
-  const checkProfile = useCallback(() => {
-    profileAPI.exists().then(r => setProfileExists(r.exists)).catch(() => setProfileExists(false));
-  }, []);
-
-  useEffect(() => { checkProfile(); }, [checkProfile]);
-
-  // Show onboarding if no profile
-  if (profileExists === false) {
-    return <OnboardingScreen onComplete={() => { setProfileExists(true); setActiveSection("overview"); }} />;
-  }
-
-  // Loading
-  if (profileExists === null) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <span className="text-[10px] tracking-[0.2em] text-muted-foreground">LOADING...</span>
-      </div>
-    );
-  }
+  const handleBacktestComplete = (results: BacktestResult[]) => {
+    setBacktestResults(results);
+    setActiveSection("results");
+  };
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -65,15 +49,18 @@ const Index = () => {
         {/* Content */}
         <div className="flex-1 overflow-hidden flex">
           <div className="flex-1 overflow-y-auto min-w-0">
-            {activeSection === "overview" && <PortfolioOverview />}
             {activeSection === "portfolio" && <PortfolioManagement />}
-            {activeSection === "advisor" && (
-              <AdvisorModule
-                onEditProfile={() => { setProfileExists(false); }}
+            {activeSection === "backtest" && (
+              <BacktestConfig onComplete={handleBacktestComplete} />
+            )}
+            {activeSection === "results" && (
+              <BacktestResults
+                results={backtestResults}
+                onRunNew={() => setActiveSection("backtest")}
               />
             )}
           </div>
-          {activeSection === "overview" && (
+          {activeSection === "portfolio" && (
             <div
               className="w-[340px] flex-shrink-0 overflow-hidden flex flex-col"
               style={{ borderLeft: "1px solid hsl(var(--border))" }}

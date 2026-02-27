@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Briefcase, Brain } from "lucide-react";
+import { Briefcase, FlaskConical, BarChart3 } from "lucide-react";
 
 interface NavItem {
   id: string;
@@ -8,9 +8,9 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: "overview", label: "OVERVIEW", icon: LayoutDashboard },
   { id: "portfolio", label: "PORTFOLIO", icon: Briefcase },
-  { id: "advisor", label: "ADVISOR", icon: Brain },
+  { id: "backtest", label: "BACKTEST", icon: FlaskConical },
+  { id: "results", label: "RESULTS", icon: BarChart3 },
 ];
 
 interface SidebarProps {
@@ -41,7 +41,6 @@ export const Sidebar = ({ activeSection, onSectionChange }: SidebarProps) => {
         style={{ borderBottom: "1px solid hsl(var(--sidebar-border))" }}
       >
         <div className="flex items-center gap-2 mb-2">
-          {/* Custom monogram mark */}
           <div
             className="w-5 h-5 flex items-center justify-center text-[10px] font-bold"
             style={{

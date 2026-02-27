@@ -10,19 +10,6 @@ class Settings(BaseSettings):
     finnhub_api_key: str = ""
     finnhub_base_url: str = "https://finnhub.io/api/v1"
 
-    # Legacy Marketstack API (kept for compatibility while migrating callers)
-    marketstack_api_key: str = ""
-
-    # OpenAI API
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4.1-mini"
-
-    # Sentiment Analysis APIs
-    newsapi_key: str = ""
-    reddit_client_id: str = ""
-    reddit_client_secret: str = ""
-    reddit_user_agent: str = "OptiInvest/1.0"
-
     # Server settings
     host: str = "127.0.0.1"
     port: int = 8000
@@ -34,26 +21,10 @@ class Settings(BaseSettings):
     # API/runtime settings
     api_timeout: int = 30
     cache_timeout: int = 300
-    sentiment_cache_timeout: int = 1800
     analysis_cache_minutes: int = 15
 
-    # Agent optimization settings
-    agent_timeout: int = 30
-    bl_risk_aversion: float = 2.5
-    bl_risk_free_rate: float = 0.02
-
-    # Analysis and scoring configuration
+    # Benchmark
     benchmark_symbol: str = "SPY"
-    sector_gap_medium: float = 0.05
-    sector_gap_high: float = 0.10
-    correlation_alert_threshold: float = 0.70
-    removal_score_threshold: int = 50
-
-    # Candidate scoring weights
-    score_weight_correlation: float = 40.0
-    score_weight_momentum: float = 30.0
-    score_weight_fundamentals: float = 20.0
-    score_weight_sector_gap: float = 10.0
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

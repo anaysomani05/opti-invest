@@ -9,7 +9,6 @@ class SessionStore:
     def __init__(self):
         self._holdings: Dict[str, Holding] = {}
         self._market_data_cache: Dict[str, dict] = {}
-        self._user_profile: Optional[Dict] = None
     
     def get_all_holdings(self) -> List[Holding]:
         """Get all holdings in the session"""
@@ -75,15 +74,6 @@ class SessionStore:
     def clear_market_cache(self) -> None:
         """Clear all cached market data"""
         self._market_data_cache.clear()
-
-    def set_user_profile(self, profile: Dict) -> None:
-        self._user_profile = profile
-
-    def get_user_profile(self) -> Optional[Dict]:
-        return self._user_profile
-
-    def has_user_profile(self) -> bool:
-        return self._user_profile is not None
 
 # Global session store instance
 session_store = SessionStore()

@@ -3,75 +3,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, date
 
 
-# ── User Profile ──────────────────────────────────────────────────────────────
-
-class UserProfile(BaseModel):
-    investment_goal: str = Field(..., description="growth | income | preservation | balanced")
-    risk_tolerance: int = Field(..., ge=1, le=10)
-    time_horizon: str = Field(..., description="short | medium | long")
-    age_range: str = Field(..., description="18-30 | 31-45 | 46-60 | 60+")
-    target_allocation: Dict[str, float] = Field(..., description="e.g. {'stocks': 0.7, 'etfs': 0.2, 'bonds': 0.1, 'crypto': 0}")
-    sector_preferences: List[str] = Field(default_factory=list)
-    sector_exclusions: List[str] = Field(default_factory=list)
-    monthly_investment: Optional[float] = None
-    created_at: datetime = Field(default_factory=datetime.now)
-
-
-# ── Advisor Output ────────────────────────────────────────────────────────────
-
-class PortfolioAction(BaseModel):
-    action: str = Field(..., description="BUY | SELL | HOLD | ADD | REDUCE")
-    symbol: str
-    name: str = ""
-    current_weight: Optional[float] = None
-    target_weight: Optional[float] = None
-    dollar_amount: Optional[float] = None
-    reasoning: str
-    confidence: float = Field(default=0.5, ge=0, le=1)
-    data_sources: List[str] = Field(default_factory=list)
-    priority: int = 1
-
-class AdvisorRecommendation(BaseModel):
-    diagnosis: str
-    actions: List[PortfolioAction] = Field(default_factory=list)
-    new_stocks: List[PortfolioAction] = Field(default_factory=list)
-    risk_warnings: List[str] = Field(default_factory=list)
-    briefing: str = ""
-    agents_used: List[str] = Field(default_factory=list)
-
-
-# ── Earnings Agent Output ─────────────────────────────────────────────────────
-
-class EarningsData(BaseModel):
-    symbol: str
-    next_earnings_date: Optional[str] = None
-    days_until_earnings: Optional[int] = None
-    last_surprise_pct: Optional[float] = None
-    beat_streak: int = 0
-    analyst_consensus: str = "hold"
-    price_target_upside: Optional[float] = None
-    estimate_revisions: str = "flat"
-    summary: str = ""
-
-
-# ── Macro Agent Output ────────────────────────────────────────────────────────
-
-class SectorMomentum(BaseModel):
-    sector: str
-    etf: str
-    return_1m: float
-    return_3m: float
-    signal: str = Field(default="neutral", description="strong | neutral | weak")
-
-class MacroSnapshot(BaseModel):
-    vix: Optional[float] = None
-    vix_trend: str = "stable"
-    yield_10y: Optional[float] = None
-    market_regime: str = "neutral"
-    sector_rotation: List[SectorMomentum] = Field(default_factory=list)
-    leading_sectors: List[str] = Field(default_factory=list)
-    lagging_sectors: List[str] = Field(default_factory=list)
-    macro_summary: str = ""
+# ── Holdings ─────────────────────────────────────────────────────────────────
 
 class Holding(BaseModel):
     id: str
@@ -138,3 +70,98 @@ class CSVUploadResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
+
+
+# ── Strategy / Optimization Models ───────────────────────────────────────────
+
+class StrategyConfig(BaseModel):
+    strategy: str = "mean_variance"
+    lookback_period: int = Field(default=180, ge=60, le=1825)
+    risk_free_rate: float = 0.04
+    current_prices: Optional[Dict[str, float]] = None
+    min_weight: float = 0.0
+    max_weight: float = 0.95
+
+class StrategyInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    best_for: str
+    uses_expected_returns: bool = True
+    supports_weight_bounds: bool = True
+
+
+# ── Backtest Models ──────────────────────────────────────────────────────────
+
+class BacktestConfig(BaseModel):
+    symbols: List[str]
+    strategy: str = "mean_variance"
+    start_date: date
+    end_date: date = Field(default_factory=date.today)
+    initial_capital: float = 100_000.0
+    rebalance_frequency: str = Field(default="quarterly", description="monthly | quarterly | semi_annual | annual | buy_and_hold")
+    lookback_days: int = Field(default=180, ge=60, le=730)
+    benchmark: str = "SPY"
+    transaction_cost_bps: float = 10.0
+
+class EquityCurvePoint(BaseModel):
+    date: str
+    portfolio_value: float
+    benchmark_value: float
+
+class WeightSnapshot(BaseModel):
+    date: str
+    weights: Dict[str, float]
+
+class BacktestTrade(BaseModel):
+    date: str
+    symbol: str
+    action: str
+    shares: float
+    amount: float
+    cost: float
+
+class MonthlyReturn(BaseModel):
+    year: int
+    month: int
+    ret: float
+
+class BacktestMetrics(BaseModel):
+    total_return: float
+    cagr: float
+    volatility: float
+    sharpe: float
+    sortino: float
+    max_drawdown: float
+    max_drawdown_duration_days: int
+    calmar_ratio: float
+    cvar_95: float
+    win_rate_monthly: float
+    best_month: float
+    worst_month: float
+    total_transaction_costs: float
+
+class BacktestResult(BaseModel):
+    strategy: str
+    strategy_name: str
+    config: BacktestConfig
+    equity_curve: List[EquityCurvePoint]
+    weights_over_time: List[WeightSnapshot]
+    trades: List[BacktestTrade]
+    metrics: BacktestMetrics
+    benchmark_metrics: BacktestMetrics
+    monthly_returns: List[MonthlyReturn]
+
+class BacktestCompareRequest(BaseModel):
+    symbols: List[str]
+    strategies: List[str]
+    start_date: date
+    end_date: date = Field(default_factory=date.today)
+    initial_capital: float = 100_000.0
+    rebalance_frequency: str = "quarterly"
+    lookback_days: int = Field(default=180, ge=60, le=730)
+    benchmark: str = "SPY"
+    transaction_cost_bps: float = 10.0
+
+class BacktestCompareResponse(BaseModel):
+    results: List[BacktestResult]

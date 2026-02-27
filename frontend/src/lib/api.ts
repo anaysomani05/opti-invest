@@ -69,166 +69,221 @@ export interface MarketQuote {
   volume: number;
 }
 
-// ─── Advisor Types ───────────────────────────────────────────────────────────
+// ─── Backtest Types ──────────────────────────────────────────────────────────
 
-export interface UserProfile {
-  investment_goal: "growth" | "income" | "preservation" | "balanced";
-  risk_tolerance: number;
-  time_horizon: "short" | "medium" | "long";
-  age_range: "18-30" | "31-45" | "46-60" | "60+";
-  target_allocation: Record<string, number>;
-  sector_preferences: string[];
-  sector_exclusions: string[];
-  monthly_investment?: number;
-  created_at?: string;
-}
-
-export interface PortfolioAction {
-  action: "BUY" | "SELL" | "HOLD" | "ADD" | "REDUCE";
-  symbol: string;
+export interface StrategyInfo {
+  id: string;
   name: string;
-  current_weight?: number;
-  target_weight?: number;
-  dollar_amount?: number;
-  reasoning: string;
-  confidence: number;
-  data_sources: string[];
-  priority: number;
+  description: string;
+  best_for: string;
+  uses_expected_returns: boolean;
+  supports_weight_bounds: boolean;
 }
 
-export interface AdvisorRecommendation {
-  diagnosis: string;
-  actions: PortfolioAction[];
-  new_stocks: PortfolioAction[];
-  risk_warnings: string[];
-  briefing: string;
-  agents_used: string[];
+export interface BacktestConfig {
+  symbols: string[];
+  strategy: string;
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+  rebalance_frequency: string;
+  lookback_days: number;
+  benchmark: string;
+  transaction_cost_bps: number;
 }
 
-export interface AgentResultData {
-  agent_name: string;
-  status: "pending" | "running" | "complete" | "error";
-  data: Record<string, any>;
-  errors: string[];
-  duration_seconds: number;
+export interface EquityCurvePoint {
+  date: string;
+  portfolio_value: number;
+  benchmark_value: number;
 }
 
-export type AdvisorSSEEvent =
-  | { type: "profile_loaded"; data: { goal: string; risk_tolerance: number; time_horizon: string } }
+export interface WeightSnapshot {
+  date: string;
+  weights: Record<string, number>;
+}
+
+export interface BacktestTrade {
+  date: string;
+  symbol: string;
+  action: string;
+  shares: number;
+  amount: number;
+  cost: number;
+}
+
+export interface MonthlyReturn {
+  year: number;
+  month: number;
+  ret: number;
+}
+
+export interface BacktestMetrics {
+  total_return: number;
+  cagr: number;
+  volatility: number;
+  sharpe: number;
+  sortino: number;
+  max_drawdown: number;
+  max_drawdown_duration_days: number;
+  calmar_ratio: number;
+  cvar_95: number;
+  win_rate_monthly: number;
+  best_month: number;
+  worst_month: number;
+  total_transaction_costs: number;
+}
+
+export interface BacktestResult {
+  strategy: string;
+  strategy_name: string;
+  config: BacktestConfig;
+  equity_curve: EquityCurvePoint[];
+  weights_over_time: WeightSnapshot[];
+  trades: BacktestTrade[];
+  metrics: BacktestMetrics;
+  benchmark_metrics: BacktestMetrics;
+  monthly_returns: MonthlyReturn[];
+}
+
+export interface BacktestCompareRequest {
+  symbols: string[];
+  strategies: string[];
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+  rebalance_frequency: string;
+  lookback_days: number;
+  benchmark: string;
+  transaction_cost_bps: number;
+}
+
+export type BacktestSSEEvent =
   | { type: "status"; message: string }
-  | { type: "gaps_identified"; data: { allocation_gaps: Record<string, number>; sector_gaps: string[] } }
-  | { type: "agent_start"; agent: string }
-  | { type: "agent_complete"; agent: string; data: AgentResultData }
-  | { type: "agent_error"; agent: string; errors: string[] }
-  | { type: "screener_complete"; data: AgentResultData }
-  | { type: "advisor_thinking"; message: string }
-  | { type: "recommendation"; data: AdvisorRecommendation }
+  | { type: "result"; data: BacktestResult }
+  | { type: "compare_result"; results: BacktestResult[] }
   | { type: "error"; message: string }
   | { type: "done" };
 
-// ─── Profile API ─────────────────────────────────────────────────────────────
+// ─── SSE Parser Helper ──────────────────────────────────────────────────────
 
-export const profileAPI = {
-  save: (profile: UserProfile) =>
-    apiRequest<{ status: string }>("/api/profile", {
-      method: "POST",
-      body: JSON.stringify(profile),
-    }),
+async function parseSSEStream(
+  response: Response,
+  onEvent: (event: BacktestSSEEvent) => void,
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
 
-  get: () => apiRequest<UserProfile>("/api/profile"),
+  const decoder = new TextDecoder();
+  let buffer = "";
 
-  exists: () => apiRequest<{ exists: boolean }>("/api/profile/exists"),
-};
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-// ─── Advisor API ─────────────────────────────────────────────────────────────
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
 
-export const advisorAPI = {
-  runStreaming: (
-    onEvent: (event: AdvisorSSEEvent) => void,
-    signal?: AbortSignal
+    for (const part of parts) {
+      const lines = part.trim().split("\n");
+      let eventType = "";
+      let dataStr = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) eventType = line.slice(7);
+        else if (line.startsWith("data: ")) dataStr = line.slice(6);
+      }
+      if (!eventType || !dataStr) continue;
+
+      try {
+        const data = JSON.parse(dataStr);
+        switch (eventType) {
+          case "status":
+            onEvent({ type: "status", message: data.message });
+            break;
+          case "result":
+            // Single backtest result
+            if (data.results) {
+              onEvent({ type: "compare_result", results: data.results });
+            } else {
+              onEvent({ type: "result", data: data as BacktestResult });
+            }
+            break;
+          case "error":
+            onEvent({ type: "error", message: data.message });
+            break;
+          case "done":
+            onEvent({ type: "done" });
+            break;
+        }
+      } catch {
+        // skip unparseable
+      }
+    }
+  }
+}
+
+// ─── Backtest API ────────────────────────────────────────────────────────────
+
+export const backtestAPI = {
+  getStrategies: () => apiRequest<StrategyInfo[]>("/api/backtest/strategies"),
+
+  runBacktest: (
+    config: BacktestConfig,
+    onEvent: (event: BacktestSSEEvent) => void,
+    signal?: AbortSignal,
   ): Promise<void> => {
     return new Promise(async (resolve, reject) => {
       try {
-        const response = await fetch(`${API_BASE}/api/advisor/run`, {
+        const response = await fetch(`${API_BASE}/api/backtest/run`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
           signal,
         });
         if (!response.ok) {
-          throw new Error(`${response.status} ${response.statusText}`);
+          const body = await response.json().catch(() => null);
+          const detail = body?.detail;
+          const msg = Array.isArray(detail)
+            ? detail.map((d: any) => `${d.loc?.join(".")}: ${d.msg}`).join("; ")
+            : typeof detail === "string" ? detail : `${response.status} ${response.statusText}`;
+          throw new Error(msg);
         }
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error("No response body");
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-
-          for (const part of parts) {
-            const lines = part.trim().split("\n");
-            let eventType = "";
-            let dataStr = "";
-            for (const line of lines) {
-              if (line.startsWith("event: ")) eventType = line.slice(7);
-              else if (line.startsWith("data: ")) dataStr = line.slice(6);
-            }
-            if (!eventType || !dataStr) continue;
-
-            try {
-              const data = JSON.parse(dataStr);
-              switch (eventType) {
-                case "profile_loaded":
-                  onEvent({ type: "profile_loaded", data });
-                  break;
-                case "status":
-                  onEvent({ type: "status", message: data.message });
-                  break;
-                case "gaps_identified":
-                  onEvent({ type: "gaps_identified", data });
-                  break;
-                case "agent_start":
-                  onEvent({ type: "agent_start", agent: data.agent });
-                  break;
-                case "agent_complete":
-                  onEvent({ type: "agent_complete", agent: data.agent, data: data.data });
-                  break;
-                case "agent_error":
-                  onEvent({ type: "agent_error", agent: data.agent, errors: data.errors });
-                  break;
-                case "screener_complete":
-                  onEvent({ type: "screener_complete", data: data.data });
-                  break;
-                case "advisor_thinking":
-                  onEvent({ type: "advisor_thinking", message: data.message });
-                  break;
-                case "recommendation":
-                  onEvent({ type: "recommendation", data: data as AdvisorRecommendation });
-                  break;
-                case "error":
-                  onEvent({ type: "error", message: data.message });
-                  break;
-                case "done":
-                  onEvent({ type: "done" });
-                  break;
-              }
-            } catch {
-              // skip unparseable events
-            }
-          }
-        }
+        await parseSSEStream(response, onEvent);
         resolve();
       } catch (err: any) {
-        if (err?.name === "AbortError") {
-          resolve();
-        } else {
-          reject(err);
+        if (err?.name === "AbortError") resolve();
+        else reject(err);
+      }
+    });
+  },
+
+  compareStrategies: (
+    config: BacktestCompareRequest,
+    onEvent: (event: BacktestSSEEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const response = await fetch(`${API_BASE}/api/backtest/compare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
+          signal,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          const detail = body?.detail;
+          const msg = Array.isArray(detail)
+            ? detail.map((d: any) => `${d.loc?.join(".")}: ${d.msg}`).join("; ")
+            : typeof detail === "string" ? detail : `${response.status} ${response.statusText}`;
+          throw new Error(msg);
         }
+        await parseSSEStream(response, onEvent);
+        resolve();
+      } catch (err: any) {
+        if (err?.name === "AbortError") resolve();
+        else reject(err);
       }
     });
   },
