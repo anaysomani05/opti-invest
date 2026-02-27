@@ -257,10 +257,10 @@ class PortfolioService:
         
         for row in reader:
             try:
-                # Expected CSV format: symbol, quantity, buy_price, buy_date (optional)
-                symbol = row.get('symbol', '').strip().upper()
-                quantity = float(row.get('quantity', 0))
-                buy_price = float(row.get('buy_price', 0))
+                # Expected CSV format: symbol/ticker, quantity/shares, buy_price, buy_date (optional)
+                symbol = (row.get('symbol') or row.get('ticker') or row.get('Symbol') or row.get('Ticker') or '').strip().upper()
+                quantity = float(row.get('quantity') or row.get('shares') or row.get('Quantity') or row.get('Shares') or 0)
+                buy_price = float(row.get('buy_price') or row.get('price') or row.get('Buy_Price') or row.get('Price') or 0)
                 
                 if not symbol or quantity <= 0 or buy_price <= 0:
                     continue

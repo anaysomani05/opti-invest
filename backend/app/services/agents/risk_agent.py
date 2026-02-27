@@ -118,7 +118,7 @@ class RiskAgent(BaseAgent):
         })
 
         # 3. Sector rotation — use historical worst monthly return
-        monthly_returns = returns.resample("ME").sum() if len(returns) > 20 else returns
+        monthly_returns = returns.resample("M").sum() if len(returns) > 20 else returns
         if not monthly_returns.empty:
             worst_month = monthly_returns.values @ weights
             sector_impact = float(np.min(worst_month)) if len(worst_month) > 0 else -0.05
