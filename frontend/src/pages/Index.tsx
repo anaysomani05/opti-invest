@@ -1,21 +1,40 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Sidebar } from "@/components/Sidebar/Sidebar";
 import { PortfolioOverview } from "@/components/PortfolioOverview/PortfolioOverview";
 import { PortfolioManagement } from "@/components/PortfolioManagement/PortfolioManagement";
-import { SentimentDashboard } from "@/components/SentimentDashboard/SentimentDashboard";
-import { OptimizationModule } from "@/components/OptimisationModule/Index";
-import { IntelligenceDashboard } from "@/components/Intelligence/IntelligenceDashboard";
+import { OnboardingScreen } from "@/components/Onboarding/OnboardingScreen";
+import { AdvisorModule } from "@/components/Advisor/AdvisorModule";
+import { profileAPI } from "@/lib/api";
 
 const SECTION_TITLES: Record<string, string> = {
   overview: "PORTFOLIO OVERVIEW",
   portfolio: "PORTFOLIO MANAGEMENT",
-  sentiment: "SENTIMENT ANALYSIS",
-  optimization: "PORTFOLIO OPTIMIZATION",
-  intelligence: "AI SIGNALS & INTELLIGENCE",
+  advisor: "AI PORTFOLIO ADVISOR",
 };
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState("overview");
+  const [profileExists, setProfileExists] = useState<boolean | null>(null);
+
+  const checkProfile = useCallback(() => {
+    profileAPI.exists().then(r => setProfileExists(r.exists)).catch(() => setProfileExists(false));
+  }, []);
+
+  useEffect(() => { checkProfile(); }, [checkProfile]);
+
+  // Show onboarding if no profile
+  if (profileExists === false) {
+    return <OnboardingScreen onComplete={() => { setProfileExists(true); setActiveSection("overview"); }} />;
+  }
+
+  // Loading
+  if (profileExists === null) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <span className="text-[10px] tracking-[0.2em] text-muted-foreground">LOADING...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -44,15 +63,9 @@ const Index = () => {
         <div className="flex-1 overflow-y-auto">
           {activeSection === "overview" && <PortfolioOverview />}
           {activeSection === "portfolio" && <PortfolioManagement />}
-          {activeSection === "sentiment" && <SentimentDashboard />}
-          {activeSection === "optimization" && (
-            <OptimizationModule
-              onNavigateToPortfolio={() => setActiveSection("portfolio")}
-            />
-          )}
-          {activeSection === "intelligence" && (
-            <IntelligenceDashboard
-              onNavigateToPortfolio={() => setActiveSection("portfolio")}
+          {activeSection === "advisor" && (
+            <AdvisorModule
+              onEditProfile={() => { setProfileExists(false); }}
             />
           )}
         </div>

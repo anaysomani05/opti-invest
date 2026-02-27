@@ -17,7 +17,7 @@ for _name in ("httpx", "httpcore", "urllib3", "filelock", "peewee", "yfinance", 
     logging.getLogger(_name).setLevel(logging.ERROR)
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from api import portfolio, market, sentiment, optimization, agent_optimization, intelligence
+from api import portfolio, market, profile, advisor
 
 # Create FastAPI application
 app = FastAPI(
@@ -39,10 +39,8 @@ app.add_middleware(
 # Include API routers
 app.include_router(portfolio.router)
 app.include_router(market.router)
-app.include_router(sentiment.router, prefix="/api/sentiment", tags=["sentiment"])
-app.include_router(optimization.router)
-app.include_router(agent_optimization.router)
-app.include_router(intelligence.router)
+app.include_router(profile.router)
+app.include_router(advisor.router)
 
 @app.get("/")
 async def root():

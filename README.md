@@ -1,160 +1,133 @@
 # Opti-Invest
 
-**Advanced Portfolio Optimization & Sentiment Analysis Platform**
+**AI-Powered Portfolio Advisor**
 
-Transform your investment strategy with AI-powered portfolio optimization, real-time market sentiment analysis, and comprehensive portfolio management tools. Built with modern web technologies and advanced financial algorithms.
+A personal portfolio management platform with an AI advisor that analyzes your holdings using multiple specialized agents (fundamentals, sentiment, earnings, macro, screener) and delivers personalized, data-driven recommendations aligned to your investor profile.
 
-## Features
+## Core User Journey
 
-### **Portfolio Management**
-- **Real-time Holdings Tracking**: Monitor your portfolio with live market data
-- **CSV Import/Export**: Bulk upload holdings via CSV files
-- **Performance Metrics**: Track returns, volatility, and risk-adjusted performance
-- **Interactive Dashboard**: Visualize portfolio composition and performance
-
-### **AI-Powered Optimization**
-- **Modern Portfolio Theory**: Advanced optimization using PyPortfolioOpt
-- **Risk Profiles**: Conservative, Moderate, and Aggressive optimization strategies
-- **Efficient Frontier**: Visualize optimal risk-return combinations
-- **Rebalancing Recommendations**: Get specific trade suggestions for optimal allocation
-
-### **Sentiment Analysis**
-- **Multi-Source Data**: News, Reddit, and social media sentiment analysis
-- **Real-time Alerts**: Get notified of significant sentiment changes
-- **VADER Sentiment Scoring**: Advanced natural language processing
-- **Batch Analysis**: Analyze multiple stocks simultaneously
-
-### **Market Data Integration**
-- **Finnhub API**: Real-time stock prices and market data
-- **Marketstack**: Historical data for optimization algorithms
-- **NewsAPI**: Financial news sentiment analysis
-- **Reddit API**: Social sentiment from investment communities
+1. **Onboarding** — 5-step profile: goal, risk tolerance, time horizon, age, target allocation & sector preferences
+2. **Portfolio Overview** — Live holdings, sector allocation, gain/loss metrics
+3. **Portfolio Management** — Add, edit, delete holdings or bulk-import via CSV
+4. **AI Advisor** — Run analysis → streaming agent results → personalized BUY/SELL/HOLD recommendations with reasoning, confidence scores, and risk warnings
 
 ## Technology Stack
 
 ### Frontend
-- **React 18.3.1** with TypeScript 5.8.3
-- **Vite 5.4.19** - Lightning-fast build tool and dev server
-- **Tailwind CSS** - Utility-first CSS framework
-- **shadcn/ui** - Modern, accessible UI component library
-- **Recharts** - Beautiful, responsive charts and data visualization
-- **React Query** - Powerful data synchronization for React
+- React 18 + TypeScript + Vite 7
+- Tailwind CSS + shadcn/ui
+- Recharts for data visualization
+- React Query for data fetching
+- JetBrains Mono terminal-style design system
 
 ### Backend
-- **FastAPI 0.104.1** - Modern, fast web framework for building APIs
-- **PyPortfolioOpt 1.5.5** - Portfolio optimization and risk management
-- **Pandas & NumPy** - Data manipulation and numerical computing
-- **VADER Sentiment** - Sentiment analysis from social media text
-- **yfinance** - Yahoo Finance market data integration
-- **scikit-learn** - Machine learning algorithms for risk modeling
+- FastAPI (Python)
+- OpenAI GPT for agent reasoning
+- yfinance for market data
+- Finnhub API for real-time quotes & news
+- In-memory session store (no database)
 
-## Project Setup
+## Setup
 
-### Backend Setup
+### Backend
 ```bash
 cd backend
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python run.py
 ```
 
-### Frontend Setup
+### Frontend
 ```bash
 cd frontend
-npm install
+npm install --legacy-peer-deps
 npm run dev
 ```
 
 ### Environment Variables
-Create `.env` file in backend directory:
+Create `.env` in the backend directory:
 ```
 FINNHUB_API_KEY=your_finnhub_key
-MARKETSTACK_API_KEY=your_marketstack_key
-NEWSAPI_KEY=your_newsapi_key
-REDDIT_CLIENT_ID=your_reddit_client_id
-REDDIT_CLIENT_SECRET=your_reddit_secret
+OPENAI_API_KEY=your_openai_key
 ```
 
 ## Project Structure
 
-### Frontend
 ```
 frontend/src/
-├── components/           # React components
-│   ├── ui/              # Reusable UI components (shadcn/ui)
-│   ├── Header/          # Navigation and branding
-│   ├── PortfolioManagement/    # Portfolio CRUD operations
-│   ├── PortfolioOverview/      # Dashboard and metrics
-│   ├── SentimentDashboard/     # Sentiment analysis interface
-│   └── OptimisationModule/     # Portfolio optimization tools
-├── hooks/               # Custom React hooks
-├── lib/                 # Utility libraries and API clients
-├── pages/               # Application pages and routing
-└── main.tsx            # Application entry point
-```
+├── components/
+│   ├── ui/                    # shadcn/ui primitives
+│   ├── Sidebar/               # Navigation sidebar
+│   ├── Onboarding/            # 5-step investor profile setup
+│   ├── PortfolioOverview/     # Dashboard with live metrics
+│   ├── PortfolioManagement/   # Holdings CRUD + CSV import
+│   └── Advisor/               # AI advisor streaming UI
+├── lib/
+│   ├── api.ts                 # API client, types, SSE helpers
+│   └── utils.ts               # Tailwind merge utility
+└── pages/
+    └── Index.tsx              # Layout + routing
 
-### Backend
-```
 backend/
 ├── app/
-│   ├── main.py         # FastAPI application and routing
-│   ├── config.py       # Configuration and environment settings
-│   ├── models.py       # Pydantic data models
-│   ├── services/       # Business logic services
-│   │   ├── portfolio_service.py
-│   │   ├── sentiment_service.py
-│   │   └── optimization_service.py
-│   └── external/       # External API integrations
-│       ├── finnhub.py
-│       └── marketstack.py
-├── api/                # API route definitions
-│   ├── portfolio.py
-│   ├── sentiment.py
-│   ├── market.py
-│   └── optimization.py
-└── requirements.txt    # Python dependencies
+│   ├── main.py                # FastAPI app, CORS, router registration
+│   ├── config.py              # Environment & settings
+│   ├── models.py              # Pydantic models
+│   ├── session_store.py       # In-memory holdings + profile store
+│   └── services/
+│       ├── portfolio_service.py   # Holdings + market data
+│       └── agents/
+│           ├── master_agent.py    # Orchestrates all agents → recommendation
+│           ├── sentiment_agent.py # News sentiment via Finnhub + GPT
+│           ├── fundamental_agent.py # Valuation & financial metrics
+│           ├── risk_agent.py      # CVaR, drawdown, stress tests
+│           ├── earnings_agent.py  # Earnings dates, surprises, consensus
+│           ├── macro_agent.py     # VIX, yields, sector rotation
+│           └── screener_agent.py  # New stock discovery
+├── api/
+│   ├── portfolio.py           # /api/portfolio/*
+│   ├── market.py              # /api/market/*
+│   ├── profile.py             # /api/profile/*
+│   └── advisor.py             # /api/advisor/* (SSE streaming)
+└── requirements.txt
 ```
 
 ## API Endpoints
 
-### Portfolio Management
-- `GET /api/portfolio/holdings` - Get all holdings
-- `POST /api/portfolio/holdings` - Create new holding
-- `PUT /api/portfolio/holdings/{id}` - Update holding
-- `DELETE /api/portfolio/holdings/{id}` - Delete holding
-- `POST /api/portfolio/upload-csv` - Bulk upload via CSV
+### Portfolio
+- `GET /api/portfolio/holdings` — List all holdings
+- `GET /api/portfolio/holdings-with-metrics` — Holdings with live gain/loss
+- `GET /api/portfolio/overview` — Summary + sector allocation
+- `POST /api/portfolio/holdings` — Add holding
+- `PUT /api/portfolio/holdings/{id}` — Update holding
+- `DELETE /api/portfolio/holdings/{id}` — Delete holding
+- `POST /api/portfolio/upload-csv` — Bulk import
+- `POST /api/portfolio/reset` — Clear all holdings
 
-### Optimization
-- `POST /api/optimization/optimize` - Run portfolio optimization
-- `GET /api/optimization/risk-profiles` - Get available risk profiles
-- `GET /api/optimization/validate` - Validate portfolio for optimization
+### Market
+- `GET /api/market/quote/{symbol}` — Real-time quote
+- `POST /api/market/quotes` — Batch quotes
+- `GET /api/market/search?q=` — Symbol search
+- `GET /api/market/fundamentals/{symbol}` — Company fundamentals
 
-### Sentiment Analysis
-- `GET /api/sentiment/overview` - Get sentiment overview for all stocks
-- `GET /api/sentiment/{symbol}` - Get sentiment for specific stock
-- `GET /api/sentiment/alerts` - Get sentiment alerts
+### Profile
+- `POST /api/profile` — Save investor profile
+- `GET /api/profile` — Get profile
+- `GET /api/profile/exists` — Check if profile exists
 
-### Market Data
-- `GET /api/market/quote/{symbol}` - Get real-time quote
-- `GET /api/market/historical/{symbol}` - Get historical data
+### Advisor
+- `POST /api/advisor/run` — Run AI analysis (SSE stream)
 
-## Key Features in Detail
+  Streams events: `profile_loaded` → `gaps_identified` → `agent_start/complete` (×5 agents) → `screener_complete` → `advisor_thinking` → `recommendation` → `done`
 
-### Portfolio Optimization
-- **Modern Portfolio Theory**: Implements Markowitz mean-variance optimization
-- **Risk Profiles**: Pre-configured optimization strategies for different risk tolerances
-- **Efficient Frontier**: Visual representation of optimal risk-return combinations
-- **Rebalancing**: Specific trade recommendations to achieve optimal allocation
+## AI Advisor Agents
 
-### Sentiment Analysis
-- **Multi-Source Aggregation**: Combines news, social media, and Reddit sentiment
-- **Real-time Processing**: Continuous monitoring of sentiment changes
-- **Alert System**: Notifications for significant sentiment shifts
-- **Historical Tracking**: Sentiment trends over time
-
-### Data Management
-- **Session-based Storage**: In-memory storage for development and testing
-- **CSV Import/Export**: Easy portfolio data management
-- **Real-time Updates**: Live market data integration
-- **Caching**: Optimized API usage with intelligent caching
-
-**Opti-Invest** - Optimize your investment strategy with AI-powered portfolio management and sentiment analysis.
+| Agent | What it does |
+|-------|-------------|
+| **Fundamental** | P/E, PEG, revenue growth, margins, valuation scoring |
+| **Sentiment** | Finnhub news headlines → GPT sentiment scoring + catalysts |
+| **Earnings** | Next earnings date, beat streak, analyst consensus, estimate revisions |
+| **Macro** | VIX, 10Y yield, sector ETF momentum, market regime detection |
+| **Screener** | Discovers new stocks matching profile gaps (sector, allocation) |
+| **Master** | Synthesizes all agent outputs → GPT generates final recommendation |
