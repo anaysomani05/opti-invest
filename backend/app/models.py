@@ -81,6 +81,8 @@ class StrategyConfig(BaseModel):
     current_prices: Optional[Dict[str, float]] = None
     min_weight: float = 0.0
     max_weight: float = 0.95
+    risk_aversion: float = 1.0
+    linkage_method: str = "single"
 
 class StrategyInfo(BaseModel):
     id: str

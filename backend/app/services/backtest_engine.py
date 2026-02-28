@@ -205,9 +205,12 @@ async def run_backtest(
             if on_progress and len(rebalance_dates) > 1:
                 await on_progress("status", f"Optimizing period {rebal_idx}/{len(rebalance_dates)}...")
 
-            # Get lookback window for optimization
+            # Get lookback window for optimization — use data BEFORE rebalance
+            # day to avoid lookahead bias (we can't know today's close when
+            # deciding trades at today's open)
             lookback_start = day - pd.Timedelta(days=config.lookback_days + 10)
-            window = prices[available].loc[lookback_start:day].dropna(how='all')
+            prev_day = day - pd.Timedelta(days=1)
+            window = prices[available].loc[lookback_start:prev_day].dropna(how='all')
 
             # Only optimize if enough data
             valid_syms = [s for s in available if s in window.columns and len(window[s].dropna()) >= 30]
@@ -220,12 +223,20 @@ async def run_backtest(
                     )
                     new_weights = strategy.optimize(opt_window, strat_config)
 
-                    # Normalize to only valid symbols
+                    # Normalize to only valid symbols, guard against NaN/negative
+                    new_weights = {k: max(v, 0) for k, v in new_weights.items()
+                                   if pd.notna(v)}
                     total_w = sum(new_weights.values())
                     if total_w > 0:
                         new_weights = {k: v / total_w for k, v in new_weights.items()}
                     else:
                         new_weights = {s: 1 / len(valid_syms) for s in valid_syms}
+
+                    # Sanity check: weights must sum to ~1
+                    w_sum = sum(new_weights.values())
+                    if abs(w_sum - 1.0) > 1e-4:
+                        logger.warning(f"Weights sum to {w_sum:.6f} at {day_date}, re-normalizing")
+                        new_weights = {k: v / w_sum for k, v in new_weights.items()}
                 except Exception as e:
                     logger.warning(f"Optimization failed at {day_date}: {e}, using equal weight")
                     new_weights = {s: 1 / len(valid_syms) for s in valid_syms}
@@ -261,8 +272,16 @@ async def run_backtest(
                                 cost=round(cost, 2),
                             ))
 
-                # Deduct transaction costs from cash (adjust shares proportionally)
-                # Simplification: costs are already tracked, just deduct from total
+                # Deduct transaction costs by reducing all positions proportionally
+                # This correctly compounds the cost drag over time
+                rebalance_cost = sum(
+                    t.cost for t in all_trades if t.date == day_str
+                )
+                if rebalance_cost > 0 and port_val > 0:
+                    cost_fraction = rebalance_cost / port_val
+                    for s in shares:
+                        shares[s] *= (1 - cost_fraction)
+
                 weights = new_weights
                 weights_history.append(WeightSnapshot(date=day_str, weights={k: round(v, 4) for k, v in weights.items()}))
 
@@ -275,10 +294,7 @@ async def run_backtest(
         else:
             port_val = capital
 
-        # Subtract accumulated costs
-        port_val_net = port_val - total_costs if port_val > total_costs else port_val
-
-        equity_curve.append((day, port_val_net))
+        equity_curve.append((day, port_val))
 
         bench_val = bench_shares * float(bench_prices.loc[day]) if day in bench_prices.index else (
             bench_shares * bench_start_price
