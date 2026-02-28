@@ -228,6 +228,25 @@ async function parseSSEStream(
 export const backtestAPI = {
   getStrategies: () => apiRequest<StrategyInfo[]>("/api/backtest/strategies"),
 
+  exportReport: async (result: BacktestResult): Promise<void> => {
+    const response = await fetch(`${API_BASE}/api/backtest/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result),
+    });
+    if (!response.ok) throw new Error("Failed to generate report");
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match?.[1] || "backtest_report.md";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
   runBacktest: (
     config: BacktestConfig,
     onEvent: (event: BacktestSSEEvent) => void,

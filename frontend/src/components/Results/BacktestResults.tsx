@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { FlaskConical } from "lucide-react";
+import { FlaskConical, Download } from "lucide-react";
 import type { BacktestResult } from "@/lib/api";
+import { backtestAPI } from "@/lib/api";
 import { EquityCurve } from "./EquityCurve";
 import { DrawdownChart } from "./DrawdownChart";
 import { MonthlyReturns } from "./MonthlyReturns";
@@ -120,11 +121,18 @@ export const BacktestResults = ({ results, onRunNew }: Props) => {
       {/* ── Trade Log ─────────────────────────────────────────────── */}
       <TradeLog trades={result.trades} />
 
-      {/* ── Run new ───────────────────────────────────────────────── */}
-      <div className="px-5 py-4">
+      {/* ── Actions ──────────────────────────────────────────────── */}
+      <div className="px-5 py-4 flex items-center gap-3">
         <button className="btn-terminal flex items-center gap-2" onClick={onRunNew}>
           <FlaskConical className="w-3 h-3" />
           RUN NEW BACKTEST
+        </button>
+        <button
+          className="btn-terminal-primary flex items-center gap-2"
+          onClick={() => backtestAPI.exportReport(result)}
+        >
+          <Download className="w-3 h-3" />
+          EXPORT REPORT
         </button>
       </div>
     </div>
