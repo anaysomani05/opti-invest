@@ -2,15 +2,18 @@
 
 **Portfolio Optimizer & Strategy Backtester**
 
-A portfolio management platform with multi-strategy optimization and backtesting. Manage holdings, run historical backtests across optimization strategies, and compare results with detailed performance analytics.
+A portfolio management platform with multi-strategy optimization and backtesting. Manage holdings, run historical backtests across optimization strategies, and compare results with detailed performance analytics including out-of-sample validation, regime analysis, and downloadable Markdown reports.
 
 ## Core Features
 
 1. **Portfolio Management** — Add, edit, delete holdings or bulk-import via CSV
-2. **Strategy Backtester** — Configure and run backtests with multiple optimization strategies (Mean-Variance, Min Variance, Risk Parity, HRP, Max Sharpe, Equal Weight)
+2. **Strategy Backtester** — Configure and run backtests with 5 optimization strategies (Mean-Variance, Min Variance, Risk Parity, Black-Litterman, HRP)
 3. **Backtest Results** — Equity curves, drawdown charts, monthly returns heatmap, weight allocation over time, trade log, and strategy comparison
-4. **Market Ticker** — Live scrolling market index quotes
-5. **News Feed** — Real-time financial news headlines via Finnhub
+4. **Walk-Forward Validation** — Automatic out-of-sample testing with hit rate, OOS Sharpe, and performance decay metrics
+5. **Regime Analysis** — Strategy performance split by bull/bear/high-volatility regimes, crash survival detection, and recovery ratios
+6. **Report Export** — Download a consolidated Markdown report with all backtest metrics, tables, and allocation snapshots
+7. **Market Ticker** — Live scrolling market index quotes
+8. **News Feed** — Real-time financial news headlines via Finnhub
 
 ## Technology Stack
 
@@ -25,8 +28,18 @@ A portfolio management platform with multi-strategy optimization and backtesting
 - FastAPI (Python)
 - yfinance for historical market data
 - Finnhub API for real-time quotes & news
-- scipy / numpy for portfolio optimization
+- scipy / numpy / cvxpy / pypfopt for portfolio optimization
 - In-memory session store (no database)
+
+## Optimization Strategies
+
+| Strategy | Description |
+|---|---|
+| **Mean-Variance** | Maximizes Sharpe ratio on the efficient frontier |
+| **Minimum Variance** | Minimizes portfolio volatility regardless of returns |
+| **Risk Parity** | Equalizes risk contribution across all assets |
+| **Black-Litterman** | Combines market equilibrium with CAPM-implied views |
+| **HRP** | Hierarchical Risk Parity — tree-based clustering, no covariance inversion |
 
 ## Setup
 
@@ -80,13 +93,21 @@ backend/
 ├── app/
 │   ├── main.py                # FastAPI app, CORS, router registration
 │   ├── config.py              # Environment & settings
-│   ├── models.py              # Pydantic models
+│   ├── models.py              # Pydantic models (backtest, regime, OOS, walk-forward)
 │   ├── session_store.py       # In-memory holdings store
 │   └── services/
 │       ├── portfolio_service.py    # Holdings + market data
-│       ├── backtest_engine.py      # Historical backtest runner
+│       ├── backtest_engine.py      # Historical backtest runner + walk-forward + regime analysis
 │       ├── backtest_compare.py     # Multi-strategy comparison
+│       ├── report_generator.py     # Markdown report builder
 │       └── optimization/           # Portfolio optimization strategies
+│           ├── mean_variance.py
+│           ├── min_variance.py
+│           ├── risk_parity.py
+│           ├── black_litterman.py
+│           ├── hrp.py
+│           ├── base.py
+│           └── registry.py
 ├── api/
 │   ├── portfolio.py           # /api/portfolio/*
 │   ├── market.py              # /api/market/*
@@ -113,5 +134,20 @@ backend/
 - `GET /api/market/fundamentals/{symbol}` — Company fundamentals
 
 ### Backtest
-- `POST /api/backtest/run` — Run backtest for a single strategy
+- `GET /api/backtest/strategies` — List available optimization strategies
+- `POST /api/backtest/run` — Run backtest (SSE stream with progress + result)
 - `POST /api/backtest/compare` — Compare multiple strategies side-by-side
+- `POST /api/backtest/report` — Generate and download a Markdown report from a backtest result
+
+## Backtest Engine Details
+
+The backtest engine runs a walk-forward simulation with the following pipeline:
+
+1. **Data fetch** — Downloads adjusted close prices via yfinance for all symbols + benchmark
+2. **Walk-forward loop** — At each rebalance date, fits the chosen optimizer on the lookback window and allocates forward
+3. **Transaction costs** — Applies configurable cost (in bps) on absolute weight changes at each rebalance
+4. **Weight clamping** — Enforces max position weight and re-normalizes
+5. **Metrics** — Computes CAGR, Sharpe, Sortino, Max Drawdown, Calmar, CVaR-95, win rate, turnover, and more for both portfolio and benchmark
+6. **Out-of-sample report** — Aggregates walk-forward period returns into hit rate, OOS Sharpe, IS Sharpe, and performance decay
+7. **Regime analysis** — Classifies benchmark returns into bull/bear/high-vol regimes and measures strategy performance in each
+8. **Report export** — Generates a downloadable Markdown file with all metrics, tables, and allocation snapshots
