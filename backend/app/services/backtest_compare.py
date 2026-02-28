@@ -33,6 +33,7 @@ async def compare_strategies(
             lookback_days=req.lookback_days,
             benchmark=req.benchmark,
             transaction_cost_bps=req.transaction_cost_bps,
+            max_position_weight=req.max_position_weight,
         )
 
         result = await run_backtest(config, on_progress=on_progress)

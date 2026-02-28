@@ -4,13 +4,16 @@ import json
 import logging
 import traceback
 
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from datetime import date
 
-from app.models import BacktestCompareRequest, BacktestConfig
+from fastapi import APIRouter
+from fastapi.responses import Response, StreamingResponse
+
+from app.models import BacktestCompareRequest, BacktestConfig, BacktestResult
 from app.services.backtest_engine import run_backtest
 from app.services.backtest_compare import compare_strategies
 from app.services.optimization.registry import get_all_strategies_info
+from app.services.report_generator import generate_report
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +61,20 @@ async def run_single_backtest(config: BacktestConfig):
             yield _sse_event("error", {"message": str(e)})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@router.post("/report")
+async def export_report(result: BacktestResult):
+    """Generate a Markdown report from a backtest result and return it as a downloadable file."""
+    md = generate_report(result)
+    strategy = result.strategy.replace(" ", "_")
+    today = date.today().isoformat()
+    filename = f"backtest_report_{strategy}_{today}.md"
+    return Response(
+        content=md,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/compare")

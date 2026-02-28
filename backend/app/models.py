@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
 from datetime import datetime, date
+from uuid import uuid4
 
 
 # ── Holdings ─────────────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ class BacktestConfig(BaseModel):
     lookback_days: int = Field(default=180, ge=60, le=730)
     benchmark: str = "SPY"
     transaction_cost_bps: float = 10.0
+    max_position_weight: float = Field(default=0.25, ge=0.05, le=1.0, description="Max weight per position (clamp + re-normalize)")
 
 class EquityCurvePoint(BaseModel):
     date: str
@@ -142,6 +144,50 @@ class BacktestMetrics(BaseModel):
     best_month: float
     worst_month: float
     total_transaction_costs: float
+    avg_turnover: float = 0.0
+    total_rebalances: int = 0
+
+class RunMetadata(BaseModel):
+    run_id: str = Field(default_factory=lambda: str(uuid4()))
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    config_hash: str = ""
+    random_seed: int = 42
+    data_hash: str = ""
+
+class WalkForwardPeriod(BaseModel):
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    return_pct: float
+
+class OOSReport(BaseModel):
+    """Out-of-sample performance summary aggregated from walk-forward periods."""
+    num_periods: int = 0
+    avg_oos_return: float = 0.0
+    median_oos_return: float = 0.0
+    oos_hit_rate: float = 0.0
+    oos_sharpe_approx: float = 0.0
+    avg_is_return: float = 0.0
+    is_sharpe_approx: float = 0.0
+    performance_decay: float = 0.0
+
+class RegimePerformance(BaseModel):
+    """Performance metrics within a single market regime."""
+    regime: str
+    trading_days: int = 0
+    total_return: float = 0.0
+    annualized_return: float = 0.0
+    volatility: float = 0.0
+    sharpe: float = 0.0
+    max_drawdown: float = 0.0
+    avg_daily_return: float = 0.0
+
+class RegimeAnalysis(BaseModel):
+    """Strategy performance split by market regime."""
+    regimes: List[RegimePerformance] = []
+    survives_crashes: bool = False
+    crash_recovery_ratio: float = 0.0
 
 class BacktestResult(BaseModel):
     strategy: str
@@ -153,6 +199,10 @@ class BacktestResult(BaseModel):
     metrics: BacktestMetrics
     benchmark_metrics: BacktestMetrics
     monthly_returns: List[MonthlyReturn]
+    run_metadata: Optional[RunMetadata] = None
+    walk_forward_periods: List[WalkForwardPeriod] = []
+    oos_report: Optional[OOSReport] = None
+    regime_analysis: Optional[RegimeAnalysis] = None
 
 class BacktestCompareRequest(BaseModel):
     symbols: List[str]
@@ -164,6 +214,7 @@ class BacktestCompareRequest(BaseModel):
     lookback_days: int = Field(default=180, ge=60, le=730)
     benchmark: str = "SPY"
     transaction_cost_bps: float = 10.0
+    max_position_weight: float = Field(default=0.25, ge=0.05, le=1.0)
 
 class BacktestCompareResponse(BaseModel):
     results: List[BacktestResult]
